@@ -1,0 +1,46 @@
+name = "web-insight-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "production"
+FRONTEND_URL = "https://web-insight.pages.dev"
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "dns-checker-db"
+database_id = "YOUR_D1_DATABASE_ID"
+migrations_dir = "src/db/migrations"
+
+# R2 Bucket
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "dns-checker-raw-scans"
+
+# Vectorize Index (future: AI insights)
+# [[vectorize]]
+# binding = "VECTORIZE"
+# index_name = "dns-checker-embeddings"
+
+# Durable Objects
+[durable_objects]
+bindings = [
+  { name = "SCAN_COORDINATOR", class_name = "ScanCoordinator" },
+  { name = "RATE_LIMITER", class_name = "RateLimiter" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ScanCoordinator", "RateLimiter"]
+
+# KV for session storage
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "YOUR_KV_NAMESPACE_ID"
+
+# KV for caching
+[[kv_namespaces]]
+binding = "CACHE"
+id = "YOUR_CACHE_KV_NAMESPACE_ID"

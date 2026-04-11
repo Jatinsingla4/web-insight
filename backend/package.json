@@ -1,0 +1,25 @@
+{
+  "name": "@dns-checker/api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run --outdir=dist",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:migrate:local": "wrangler d1 migrations apply dns-checker-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply dns-checker-db --remote"
+  },
+  "dependencies": {
+    "@dns-checker/shared": "*",
+    "@trpc/server": "^11.0.0",
+    "itty-router": "^5.0.0",
+    "jose": "^5.9.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241205.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^3.99.0"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Next.js Frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace=@dns-checker/web"],
+      "port": 3000
+    },
+    {
+      "name": "Cloudflare Worker API",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace=@dns-checker/api"],
+      "port": 8787
+    }
+  ]
+}

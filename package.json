@@ -1,0 +1,20 @@
+{
+  "name": "web-insight",
+  "private": true,
+  "workspaces": ["backend", "frontend", "packages/*"],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "db:migrate": "cd backend && wrangler d1 migrations apply dns-checker-db"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "npm@10.0.0"
+}
