@@ -9,7 +9,8 @@ import {
   Search,
   MoreVertical,
   Activity,
-  History,
+  Settings2,
+  Zap,
   AlertCircle
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -83,7 +84,7 @@ export function BrandManagement() {
           <div className="flex items-center gap-4 text-[11px] font-black uppercase tracking-widest text-surface-400">
             <span className="flex items-center gap-1.5"><Activity className="h-3.5 w-3.5" /> Total Scans: {brands.length}</span>
             <span className="h-4 w-px bg-surface-200" />
-            <span className="flex items-center gap-1.5"><History className="h-3.5 w-3.5" /> Fleet Capacity: 100%</span>
+            <span className="flex items-center gap-1.5"><Zap className="h-3.5 w-3.5" /> Fleet Capacity: 100%</span>
           </div>
         </div>
 
@@ -148,7 +149,7 @@ export function BrandManagement() {
                           className="p-2 rounded-lg bg-surface-100 text-surface-500 hover:bg-surface-200 hover:text-surface-900 transition-all shadow-sm border border-surface-200 hover:border-surface-300"
                           title="Edit Brand"
                         >
-                          <History className="h-4 w-4" /> {/* Reusing history as an edit-like icon */}
+                          <Settings2 className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(brand)}

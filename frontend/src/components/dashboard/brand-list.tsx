@@ -10,6 +10,7 @@ import {
   Plus,
   ArrowLeft,
   Zap,
+  Settings2,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/lib/trpc";
@@ -221,7 +222,7 @@ function BrandCard({
              className={`p-1 rounded border border-transparent transition-colors ${isSelected ? 'hover:bg-white/10 text-white' : 'hover:bg-white text-surface-400 hover:text-brand-600 hover:border-surface-200'}`}
              title="Edit Brand"
            >
-             <Plus className="h-3 w-3 rotate-45" />
+             <Settings2 className="h-3 w-3" />
            </button>
            <button 
              onClick={async (e) => { 
@@ -307,7 +308,7 @@ function BrandCard({
               }}
               className="btn-ghost gap-1.5 text-[11px] font-bold py-1.5 h-auto text-surface-600 hover:bg-white border border-transparent hover:border-surface-200"
             >
-              <Plus className="h-3.5 w-3.5 rotate-45" />
+              <Settings2 className="h-3.5 w-3.5" />
               EDIT
             </button>
           </div>
