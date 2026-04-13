@@ -83,7 +83,7 @@ export function QuickScanForm({ onScanComplete, onScanStateChange, triggerUrl }:
           onRefresh={() =>
             scanMutation.mutate({ url: scanMutation.data!.url, force: true })
           }
-          showSaveBrandButton={true}
+          showSaveBrandButton={false}
         />
       )}
     </div>

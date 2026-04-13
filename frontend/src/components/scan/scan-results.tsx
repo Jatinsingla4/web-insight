@@ -116,15 +116,6 @@ export function ScanResults({
     },
   });
  
-  const [brandSaved, setBrandSaved] = useState(false);
-  const utils = trpc.useUtils();
- 
-  const saveBrandMutation = trpc.brand.create.useMutation({
-    onSuccess: () => {
-      setBrandSaved(true);
-      utils.brand.invalidate();
-    },
-  });
  
   return (
     <div className={cn("space-y-6 animate-fade-in", isHistorical && "opacity-90")}>
@@ -152,28 +143,6 @@ export function ScanResults({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {isAuthenticated && showSaveBrandButton && (
-            <button
-              onClick={() => saveBrandMutation.mutate({ 
-                domain: data.domain, 
-                name: data.domain,
-                initialScanData: data 
-              })}
-              disabled={saveBrandMutation.isPending || brandSaved}
-              className={`btn-outline text-xs h-8 gap-2 bg-white ${
-                brandSaved ? 'text-emerald-600 border-emerald-200 bg-emerald-50' : 'text-brand-600 border-brand-200'
-              }`}
-            >
-              {saveBrandMutation.isPending ? (
-                <Spinner size="sm" />
-              ) : brandSaved ? (
-                <Check className="h-3 w-3" />
-              ) : (
-                <Bookmark className="h-3 w-3" />
-              )}
-              {brandSaved ? "Saved to Brands" : "Save to My Brands"}
-            </button>
-          )}
           {!hideRefreshButton && (
             <button
               onClick={onRefresh}
