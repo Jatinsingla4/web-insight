@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   Globe, 
   Search, 
@@ -38,51 +38,38 @@ export interface ScanResultsProps {
   isAuthenticated?: boolean;
 }
 
-/** Simulated progress: eases 0→88% over ~90s, then pulses 88-96% while waiting, snaps to 100 on done. */
-function useDeepScanProgress(status: string | undefined): { progress: number; isStalled: boolean } {
-  const [progress, setProgress] = useState(0);
-  const [isStalled, setIsStalled] = useState(false);
-  const startTimeRef = useRef(Date.now());
+/** Real progress based on actual filled SSL fields — no fake animation. */
+function calcSslProgress(ssl: ScanResult["ssl"]): { filled: number; total: number; percent: number } {
+  if (!ssl) return { filled: 0, total: 1, percent: 0 };
 
-  useEffect(() => {
-    if (status === "ready" || status === "failed") {
-      setProgress(100);
-      setIsStalled(false);
-      return;
-    }
-    if (status !== "scanning") {
-      setProgress(0);
-      setIsStalled(false);
-      return;
-    }
+  // Every field that matters, tracked honestly
+  const fields = [
+    ssl.subject && ssl.subject !== "Unknown",       // cert lookup
+    ssl.issuer && ssl.issuer !== "Unknown",          // cert lookup
+    ssl.validFrom && ssl.validFrom !== "Unknown",    // cert lookup
+    ssl.validTo && ssl.validTo !== "Unknown",        // cert lookup
+    ssl.daysUntilExpiry !== null,                    // cert lookup
+    ssl.hstsEnabled !== null,                        // HTTPS probe
+    ssl.caaRecordPresent !== null,                   // DNS check
+    ssl.ctCompliant !== null,                        // cert lookup
+    ssl.protocol !== null,                           // probe or deep scan
+    ssl.tls13Enabled !== null,                       // probe or deep scan
+    ssl.tls12Enabled !== null,                       // probe or deep scan
+    ssl.alpnSupported !== null,                      // probe or deep scan
+    ssl.grade !== null,                              // deep scan only
+    ssl.keySize !== null,                            // direct TCP or deep scan
+    ssl.keyAlgorithm !== null,                       // direct TCP or deep scan
+    ssl.signatureAlgorithm !== null,                 // direct TCP or deep scan
+    ssl.isVulnerable !== null,                       // deep scan only
+    ssl.forwardSecrecy !== null,                     // direct TCP or deep scan
+    ssl.ocspStapling !== null,                       // deep scan only
+    // Note: cipherSuiteName, chainLength, sctCount are bonus TCP fields — not counted
+    // in total so progress reaches 100% even when TCP socket path isn't available.
+  ];
 
-    startTimeRef.current = Date.now();
-    setProgress(5);
-    setIsStalled(false);
-
-    const interval = setInterval(() => {
-      const elapsed = (Date.now() - startTimeRef.current) / 1000;
-
-      if (elapsed < 90) {
-        // Phase 1: Smooth ease-out to 88%
-        const p = 5 + 83 * (1 - Math.exp(-elapsed / 35));
-        setProgress(Math.round(p));
-      } else {
-        // Phase 2: Gentle pulse between 88-96% so it doesn't look frozen
-        const wave = Math.sin((elapsed - 90) / 8) * 4; // oscillates ±4
-        setProgress(Math.round(92 + wave));
-      }
-
-      // After 2.5 min, show "taking longer" message
-      if (elapsed > 150) {
-        setIsStalled(true);
-      }
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, [status]);
-
-  return { progress, isStalled };
+  const total = fields.length;
+  const filled = fields.filter(Boolean).length;
+  return { filled, total, percent: Math.round((filled / total) * 100) };
 }
 
 export function ScanResults({
@@ -121,7 +108,7 @@ export function ScanResults({
 
   // Use liveSSL for display (falls back to initial data.ssl)
   const displaySSL = liveSSL ?? data.ssl;
-  const { progress: deepScanProgress, isStalled: deepScanStalled } = useDeepScanProgress(displaySSL?.deepScanStatus);
+  const sslProgress = calcSslProgress(displaySSL);
 
   const reminderMutation = trpc.reminder.setSslReminder.useMutation({
     onSuccess: () => {
@@ -251,11 +238,12 @@ export function ScanResults({
                         {/* Tooltip */}
                         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-56 bg-surface-900 text-white text-[10px] px-3 py-2 rounded-xl shadow-2xl z-50 text-center animate-in fade-in zoom-in duration-200 border border-surface-700 font-normal">
                           <p className="leading-relaxed">
-                            {vuln.path.includes('.git') && "Critical: Exposed Git directory allows attackers to download your entire source code and developer history."}
-                            {vuln.path.includes('.env') && "Critical: Environment files often contain database passwords, API keys, and sensitive secret tokens."}
-                            {vuln.path.includes('security.txt') && "Security standard: A file for researchers to report vulnerabilities responsibly."}
-                            {vuln.path.includes('.ds_store') && "Metadata risk: Reveals filenames and directory structure to potential attackers."}
-                            {(!vuln.path.includes('.git') && !vuln.path.includes('.env') && !vuln.path.includes('security.txt') && !vuln.path.includes('.ds_store')) && vuln.description}
+                            {vuln.path.includes('.git') && "Critical: Exposed Git directory allows attackers to download entire source code and history."}
+                            {vuln.path.includes('.env') && "Critical: Environment files contain database credentials and sensitive API keys."}
+                            {vuln.path.includes('wp-json') && "Risk: WordPress REST API is exposing site user metadata."}
+                            {vuln.path.includes('xmlrpc') && "Risk: XML-RPC is often used for DDoS amplification or brute-force attacks."}
+                            {vuln.path.includes('laravel.log') && "Risk: Log exposure reveals application flow and potential hidden errors."}
+                            {(!vuln.path.includes('.git') && !vuln.path.includes('.env') && !vuln.path.includes('wp-json') && !vuln.path.includes('xmlrpc') && !vuln.path.includes('laravel.log')) && vuln.description}
                           </p>
                         </div>
                       </div>
@@ -398,24 +386,61 @@ export function ScanResults({
 
             <div className="group relative p-5 rounded-2xl bg-white border border-surface-200 cursor-help shadow-sm hover:shadow-md transition-all">
               <p className="text-[10px] font-black text-surface-400 uppercase tracking-widest mb-4 flex items-center gap-1">
+                Deep Policy Analysis <span className="text-[10px] opacity-40">?</span>
+              </p>
+              {data.privacyAudit.policyAnalysis ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-surface-600 font-bold uppercase tracking-tight">GDPR Status</span>
+                    {data.privacyAudit.policyAnalysis.containsGdprLinks ? (
+                      <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 uppercase">Compliant</span>
+                    ) : (
+                      <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 uppercase">Review Needed</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-surface-600 font-bold uppercase tracking-tight">CCPA Status</span>
+                    {data.privacyAudit.policyAnalysis.containsCcpaLinks ? (
+                      <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 uppercase">Compliant</span>
+                    ) : (
+                      <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 uppercase">Review Needed</span>
+                    )}
+                  </div>
+                  <p className="text-[9px] text-surface-400 italic mt-2 border-t pt-2">
+                    Verified: {data.privacyAudit.policyAnalysis.verified ? 'YES' : 'NO'} | Analysis depth: 30KB
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-surface-400 bg-surface-50 p-4 rounded-xl border border-surface-100">
+                  <HelpCircle className="h-4 w-4" />
+                  <p className="text-xs font-bold uppercase tracking-tight">Analysis Unavailable</p>
+                </div>
+              )}
+              <div className="absolute right-0 bottom-full mb-2 hidden group-hover:block w-64 bg-surface-900 text-white text-[10px] px-3 py-2 rounded-xl shadow-2xl z-50 text-center font-normal border border-surface-700 animate-in fade-in duration-200">
+                Automatically fetches and scans the privacy policy content for legally required compliance clauses (GDPR/CCPA).
+              </div>
+            </div>
+
+            <div className="group relative p-5 rounded-2xl bg-white border border-surface-200 cursor-help shadow-sm hover:shadow-md transition-all">
+              <p className="text-[10px] font-black text-surface-400 uppercase tracking-widest mb-4 flex items-center gap-1">
                 Tracking Infrastructure <span className="text-[10px] opacity-40">?</span>
               </p>
               {data.privacyAudit.trackingPixels.length === 0 ? (
                 <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 p-4 rounded-xl border border-emerald-100">
                   <Check className="h-4 w-4" />
-                  <p className="text-xs font-bold uppercase tracking-tight">Privacy-First: No third-party pixels detected.</p>
+                  <p className="text-[10px] font-bold uppercase tracking-tight">No third-party trackers detected.</p>
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {data.privacyAudit.trackingPixels.map((pixel, i) => (
-                    <span key={i} className="px-3 py-1.5 rounded-xl bg-surface-50 text-surface-700 text-[10px] font-black border border-surface-100">
+                    <span key={i} className="px-2 py-1 rounded-lg bg-surface-50 text-surface-700 text-[9px] font-black border border-surface-100">
                       {pixel}
                     </span>
                   ))}
                 </div>
               )}
               <div className="absolute right-0 bottom-full mb-2 hidden group-hover:block w-64 bg-surface-900 text-white text-[10px] px-3 py-2 rounded-xl shadow-2xl z-50 text-center font-normal border border-surface-700 animate-in fade-in duration-200">
-                Detects marketing trackers that may collect user data. High pixel counts can increase "privacy debt" and slow down your site.
+                Detects known marketing trackers and analytics pixels that may impact user privacy and page weight.
               </div>
             </div>
           </div>
@@ -443,18 +468,72 @@ export function ScanResults({
         <div className="flex flex-col xl:flex-row gap-8 mb-8">
           <div className="flex-1">
             <p className="text-xs text-surface-500 leading-relaxed mb-4">
-              DNS (Domain Name System) acts as the "Internet's Phonebook," translating domain names into IP addresses. 
-              Our audit verifies both the delivery infrastructure and advanced security protocols like anti-spoofing and cryptographic signatures.
+              DNS (Domain Name System) acts as the "Internet's Phonebook". Our platform performs **Consensus Verification** across Google, Cloudflare, and NextDNS to ensure your records haven't been hijacked.
             </p>
-            {data.dns.nameservers.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {data.dns.nameservers.map((ns, i) => (
-                  <div key={i} className="group relative flex items-center gap-2 text-[10px] font-bold text-blue-600 bg-blue-100/50 px-3 py-1 rounded-lg cursor-help transition-all hover:bg-blue-100">
-                    NS/TRUTH: {ns.toUpperCase()}
+            <div className="flex flex-col gap-4">
+              {data.dns.whois && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="group relative p-3 rounded-xl bg-surface-50 border border-surface-100 cursor-help">
+                    <p className="text-[9px] font-black text-surface-400 uppercase tracking-widest mb-1">Registrar</p>
+                    <p className="text-xs font-bold text-surface-700 truncate">{data.dns.whois.registrar}</p>
+                    <div className="absolute top-full left-0 mt-2 hidden group-hover:block w-48 bg-surface-900 text-white text-[10px] px-3 py-2 rounded-xl shadow-2xl z-50 font-normal border border-surface-700 animate-in fade-in duration-200">
+                      The entity responsible for managing the registration of your domain name.
+                    </div>
                   </div>
-                ))}
-              </div>
-            )}
+                  <div className="group relative p-3 rounded-xl bg-surface-50 border border-surface-100 cursor-help">
+                    <p className="text-[9px] font-black text-surface-400 uppercase tracking-widest mb-1">Registered On</p>
+                    <p className="text-xs font-bold text-surface-700">{data.dns.whois.createdDate ? new Date(data.dns.whois.createdDate).toLocaleDateString() : 'N/A'}</p>
+                    <div className="absolute top-full left-0 mt-2 hidden group-hover:block w-48 bg-surface-900 text-white text-[10px] px-3 py-2 rounded-xl shadow-2xl z-50 font-normal border border-surface-700 animate-in fade-in duration-200">
+                      The date this domain was first registered. Older domains often carry more authority.
+                    </div>
+                  </div>
+                  <div className="group relative p-3 rounded-xl bg-surface-50 border border-surface-100 cursor-help">
+                    <p className="text-[9px] font-black text-surface-400 uppercase tracking-widest mb-1">Expires On</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-bold text-surface-700">{data.dns.whois.expiryDate ? new Date(data.dns.whois.expiryDate).toLocaleDateString() : 'N/A'}</p>
+                      {data.dns.whois.isExpiringSoon && (
+                        <span className="flex h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                      )}
+                    </div>
+                    <div className="absolute top-full left-0 mt-2 hidden group-hover:block w-48 bg-surface-900 text-white text-[10px] px-3 py-2 rounded-xl shadow-2xl z-50 font-normal border border-surface-700 animate-in fade-in duration-200">
+                      When the domain registration will lapse. Renew early to prevent service interruption.
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {data.dns.consensus && (
+                <div className="group relative">
+                  <div className={cn(
+                    "p-4 rounded-xl border flex items-center justify-between cursor-help",
+                    data.dns.consensus.isConsistent ? "bg-emerald-50 border-emerald-100 text-emerald-800" : "bg-red-50 border-red-100 text-red-800"
+                  )}>
+                    <div className="flex items-center gap-2">
+                      <div className={cn("w-2 h-2 rounded-full", data.dns.consensus.isConsistent ? "bg-emerald-500" : "bg-red-500")} />
+                      <span className="text-xs font-bold uppercase tracking-tight">
+                        {data.dns.consensus.isConsistent ? "Global DNS Consensus Achieved" : "DNS Inconsistency Detected"}
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-medium opacity-70">
+                      Verified across {data.dns.consensus.resolversChecked.join(", ")}
+                    </span>
+                  </div>
+                  <div className="absolute top-full left-0 mt-2 hidden group-hover:block w-full bg-surface-900 text-white text-[10px] px-3 py-2 rounded-xl shadow-2xl z-50 font-normal border border-surface-700 animate-in fade-in duration-200">
+                    We query multiple global resolvers (Google, Cloudflare, NextDNS) to ensure your records are identical everywhere, protecting against DNS hijacking or localized poisoning.
+                  </div>
+                </div>
+              )}
+
+              {data.dns.nameservers.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {data.dns.nameservers.map((ns, i) => (
+                    <div key={i} className="group relative flex items-center gap-2 text-[10px] font-bold text-blue-600 bg-blue-100/50 px-3 py-1 rounded-lg cursor-help transition-all hover:bg-blue-100">
+                      NS/TRUTH: {ns.toUpperCase()}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -903,13 +982,18 @@ export function ScanResults({
               {displaySSL.deepScanStatus === 'scanning' && (
                 <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest bg-blue-100 text-blue-600">
                   <div className="h-1 w-1 rounded-full bg-blue-600 animate-ping" />
-                  Deep Audit {deepScanProgress}%
+                  {sslProgress.filled}/{sslProgress.total} Checks
                 </span>
               )}
               {displaySSL.deepScanStatus === 'ready' && (
                 <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest bg-emerald-100 text-emerald-600">
                   <Check className="h-3 w-3" />
-                  Verified
+                  {sslProgress.total}/{sslProgress.total} Verified
+                </span>
+              )}
+              {displaySSL.deepScanStatus === 'failed' && (
+                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest bg-amber-100 text-amber-600">
+                  {sslProgress.filled}/{sslProgress.total} Checks
                 </span>
               )}
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-widest ${
@@ -932,27 +1016,38 @@ export function ScanResults({
           </div>
         ) : (
           <div className="space-y-8">
-            {/* Deep Scan Progress Bar */}
-            {displaySSL.deepScanStatus === "scanning" && (
+            {/* Deep Scan Progress — real field count, not fake animation */}
+            {(displaySSL.deepScanStatus === "scanning" || displaySSL.deepScanStatus === "failed") && (
               <div className="px-1">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Live Deep Audit</span>
-                  <span className="text-[10px] font-bold text-blue-600 tabular-nums">{deepScanProgress}%</span>
+                  <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">
+                    {displaySSL.deepScanStatus === "failed" ? "Deep Audit Incomplete" : "Live Deep Audit"}
+                  </span>
+                  <span className="text-[10px] font-bold text-surface-500 tabular-nums">
+                    {sslProgress.filled} of {sslProgress.total} checks complete
+                  </span>
                 </div>
                 <div className="h-1.5 bg-surface-100 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 rounded-full transition-all duration-1000 ease-out"
-                    style={{ width: `${deepScanProgress}%` }}
+                    className={cn(
+                      "h-full rounded-full transition-all duration-700 ease-out",
+                      displaySSL.deepScanStatus === "failed"
+                        ? "bg-amber-400"
+                        : "bg-gradient-to-r from-blue-500 to-emerald-500"
+                    )}
+                    style={{ width: `${sslProgress.percent}%` }}
                   />
                 </div>
-                <p className="text-[10px] text-surface-400 mt-1.5">
-                  {deepScanStalled
-                    ? "SSL Labs is taking longer than usual. Results will update automatically when ready."
-                    : deepScanProgress < 30 ? "Initiating SSL Labs handshake..."
-                    : deepScanProgress < 60 ? "Analyzing TLS configuration & cipher suites..."
-                    : deepScanProgress < 85 ? "Checking for vulnerabilities (Heartbleed, POODLE, etc.)..."
-                    : "Finalizing security grade..."}
-                </p>
+                {displaySSL.deepScanStatus === "scanning" && (
+                  <p className="text-[10px] text-surface-400 mt-1.5">
+                    SSL Labs deep audit running — grade, vulnerabilities & cipher data will appear as they arrive.
+                  </p>
+                )}
+                {displaySSL.deepScanStatus === "failed" && (
+                  <p className="text-[10px] text-amber-600 mt-1.5">
+                    SSL Labs could not complete the deep audit. Showing available data.
+                  </p>
+                )}
               </div>
             )}
 
@@ -1025,6 +1120,37 @@ export function ScanResults({
                 </div>
               </div>
 
+              <div className="p-6 rounded-2xl bg-white border border-surface-200 shadow-sm flex flex-col items-center justify-center text-center relative">
+                <span className="text-[10px] font-bold text-surface-400 uppercase tracking-widest absolute top-6">Identity Verification</span>
+                <div className="flex flex-col gap-4 mt-8 w-full">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[10px] font-bold text-surface-500 uppercase tracking-wider">OCSP Stapling</span>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${displaySSL.ocspStapling ? 'bg-emerald-100 text-emerald-600' : 'bg-surface-100 text-surface-400'}`}>
+                      {displaySSL.ocspStapling ? 'ACTIVE / STAPLED' : 'NOT STAPLED'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[10px] font-bold text-surface-500 uppercase tracking-wider">CT Compliance</span>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${displaySSL.ctCompliant ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+                      {displaySSL.ctCompliant
+                        ? displaySSL.sctCount != null ? `${displaySSL.sctCount} SCT${displaySSL.sctCount !== 1 ? 's' : ''} LOGGED` : 'LOGGED & VERIFIED'
+                        : 'PENDING CHECK'}
+                    </span>
+                  </div>
+                  {displaySSL.isSelfSigned && (
+                    <div className="flex items-center justify-between px-1">
+                      <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Self-Signed</span>
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-red-100 text-red-600">WARNING</span>
+                    </div>
+                  )}
+                  <p className="text-[9px] text-surface-400 leading-tight">
+                    {displaySSL.ocspStapling
+                      ? "The server proactively provides certificate revocation status, improving performance and privacy."
+                      : "The browser must perform extra lookups to verify this certificate hasn't been revoked."}
+                  </p>
+                </div>
+              </div>
+
               <div className="p-6 rounded-2xl bg-white border border-surface-200 shadow-sm flex flex-col items-center justify-center text-center relative overflow-hidden group">
                 <span className="text-[10px] font-bold text-surface-400 uppercase tracking-widest absolute top-6">Security Grade</span>
                 {displaySSL.grade ? (
@@ -1054,15 +1180,39 @@ export function ScanResults({
               <div className="p-6 rounded-2xl bg-white border border-surface-200 shadow-sm">
                 <span className="text-[10px] font-bold text-surface-400 uppercase tracking-widest block mb-4">TLS Protocol</span>
                 {displaySSL.protocol ? (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-lg font-black text-surface-900">{displaySSL.protocol}</span>
                       <div className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-600 text-[10px] font-bold">ACTIVE</div>
                     </div>
-                    <div className="pt-4 border-t border-surface-100 flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Cipher strength</span>
+                    <div className="pt-3 border-t border-surface-100 flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Key strength</span>
                       <span className="text-xs font-bold text-surface-900">{displaySSL.keySize ? `${displaySSL.keySize}-bit ${displaySSL.keyAlgorithm}` : '---'}</span>
                     </div>
+                    {displaySSL.signatureAlgorithm && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Signature</span>
+                        <span className="text-xs font-bold text-surface-900">{displaySSL.signatureAlgorithm}</span>
+                      </div>
+                    )}
+                    {displaySSL.cipherSuiteName && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Cipher</span>
+                        <span className="text-[10px] font-bold text-surface-700 text-right max-w-[55%] break-all">{displaySSL.cipherSuiteName}</span>
+                      </div>
+                    )}
+                    {displaySSL.chainLength != null && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-surface-400 uppercase tracking-widest">Chain depth</span>
+                        <span className="text-xs font-bold text-surface-900">{displaySSL.chainLength} cert{displaySSL.chainLength !== 1 ? 's' : ''}</span>
+                      </div>
+                    )}
+                    {displaySSL.sctCount != null && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-surface-400 uppercase tracking-widest">CT proofs (SCTs)</span>
+                        <span className="text-xs font-bold text-surface-900">{displaySSL.sctCount}</span>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-4 animate-pulse">
@@ -1101,8 +1251,8 @@ export function ScanResults({
                 />
                 <SecurityBadge
                   label="OCSP Stapling"
-                  enabled={displaySSL.ocspStapling}
-                  description="Improves user privacy and site performance by providing certificate status locally."
+                  enabled={displaySSL.ocspStapling ?? null}
+                  description="Online Certificate Status Protocol: The server provides proof of validity locally, making handshakes faster and protecting user privacy by avoiding external CA checks."
                 />
                 <SecurityBadge
                   label="ALPN (HTTP/2-3)"
@@ -1121,14 +1271,21 @@ export function ScanResults({
                 />
                 <SecurityBadge
                   label="CT Compliant"
-                  enabled={displaySSL.ctCompliant}
-                  description="Certificate Transparency: Proof that the certificate is publicly logged and legitimate."
+                  enabled={displaySSL.ctCompliant ?? null}
+                  description="Certificate Transparency: Ensures your SSL certificate is publicly logged in tamper-proof ledgers, preventing unauthorized or secret 'shadow' certificates."
                 />
                 <SecurityBadge
                   label="CAA Record"
                   enabled={displaySSL.caaRecordPresent}
                   description="DNS security layer that limits which CAs are allowed to issue certificates for you."
                 />
+                {displaySSL.isSelfSigned != null && (
+                  <SecurityBadge
+                    label="Not Self-Signed"
+                    enabled={displaySSL.isSelfSigned === false ? true : false}
+                    description="A trusted Certificate Authority signed this certificate. Self-signed certs trigger browser warnings and are not trusted by default."
+                  />
+                )}
               </div>
             </div>
           </div>

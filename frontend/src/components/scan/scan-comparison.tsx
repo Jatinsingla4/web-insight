@@ -51,13 +51,19 @@ export function ScanComparison({ current, previous }: ScanComparisonProps) {
           </div>
 
           <div className="flex items-center gap-6 divide-x divide-white/10">
-            <div className="text-center">
+            <div className="group relative text-center cursor-help">
               <p className="text-[10px] font-black text-white/60 uppercase tracking-widest mb-1">Baseline</p>
               <p className="text-2xl font-black text-white/80">{previousScore}</p>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover:block w-32 bg-surface-900 text-white text-[9px] px-2 py-1 rounded-lg shadow-xl z-50 text-center font-normal border border-surface-700 animate-in fade-in duration-200">
+                Score at the start of monitoring.
+              </div>
             </div>
-            <div className="pl-6 text-center">
+            <div className="group relative pl-6 text-center cursor-help">
               <p className="text-[10px] font-black text-white/60 uppercase tracking-widest mb-1">Current</p>
               <p className="text-4xl font-black text-white leading-none">{currentScore}</p>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover:block w-32 bg-surface-900 text-white text-[9px] px-2 py-1 rounded-lg shadow-xl z-50 text-center font-normal border border-surface-700 animate-in fade-in duration-200">
+                Latest audit performance.
+              </div>
             </div>
             <div className="pl-6">
               <div className={cn("px-4 py-2 rounded-xl flex flex-col items-center gap-0.5 shadow-lg", 

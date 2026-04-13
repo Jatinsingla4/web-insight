@@ -16,6 +16,7 @@ export interface Env {
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   SESSION_SECRET: string;
+  RESEND_API_KEY?: string;
   // Vars
   ENVIRONMENT: string;
   FRONTEND_URL: string;

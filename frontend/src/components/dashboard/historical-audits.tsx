@@ -91,12 +91,17 @@ export function HistoricalAudits({ brandId, onViewScan, onCompareScan }: Histori
                         })}
                       </p>
                       {trend !== 0 && (
-                        <div className={cn(
-                          "flex items-center gap-0.5 text-[10px] font-black uppercase tracking-widest",
-                          trend > 0 ? "text-emerald-500" : "text-red-500"
-                        )}>
-                          {trend > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                          {Math.abs(trend)} pts
+                        <div className="group relative">
+                          <div className={cn(
+                            "flex items-center gap-0.5 text-[10px] font-black uppercase tracking-widest cursor-help",
+                            trend > 0 ? "text-emerald-500" : "text-red-500"
+                          )}>
+                            {trend > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                            {Math.abs(trend)} pts
+                          </div>
+                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-32 bg-surface-900 text-white text-[9px] px-2 py-1 rounded-lg shadow-xl z-50 text-center font-normal border border-surface-700 animate-in fade-in duration-200">
+                            Score change since previous audit.
+                          </div>
                         </div>
                       )}
                     </div>

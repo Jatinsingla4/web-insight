@@ -72,28 +72,25 @@ export class ScanService {
       // DNS A record failed or timed out — continue without IP
     }
 
-    // Phase 2: ALL services in parallel — including IP analysis (no sequential Phase 3)
+    // Phase 2: Parallel Discovery & Baseline Scans
     const [
-      techStack,
+      techStackResult,
       dnsResult,
-      ssl,
-      security,
-      vulnerabilities,
+      sslResult,
+      securityResult,
       htmlResponse,
-      connectivity,
-      ipLocation,
-      ipBlacklisted,
+      connectivityResult,
+      ipLocationResult,
+      ipBlacklistedResult,
     ] = await Promise.allSettled([
       this.techStack.analyze(url, force),
       this.dns.lookup(domain, force),
       this.ssl.analyze(domain, force, ctx),
       this.security.analyzeHeaders(url),
-      this.vulnerability.checkExposures(url),
       fetch(url, {
         headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 DNSChecker/1.0",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 WebInsight/1.0",
           "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
           "Referer": "https://www.google.com/",
         },
         signal: AbortSignal.timeout(6000)
@@ -103,22 +100,32 @@ export class ScanService {
       ipAddress ? this.dns.checkReputation(ipAddress) : Promise.resolve(null),
     ]);
 
-    const techStackResult = techStack.status === "fulfilled" ? techStack.value : { techs: [], headers: null };
-    const ipLocationResult = ipLocation.status === "fulfilled" ? ipLocation.value : null;
-    const dnsData = dnsResult.status === "fulfilled" ? dnsResult.value : null;
+    const techs = techStackResult.status === "fulfilled" ? techStackResult.value.techs : [];
+    const html = htmlResponse.status === "fulfilled" ? htmlResponse.value : "";
 
-    // Build server info from parallel results
+    // Phase 3: Deep Context-Aware Scans (Depends on Tech & HTML)
+    const [
+      vulnerabilities,
+      privacy,
+    ] = await Promise.allSettled([
+      this.vulnerability.checkExposures(url, techs),
+      this.privacy.analyzePrivacy(html, url),
+    ]);
+
+    const dnsData = dnsResult.status === "fulfilled" ? dnsResult.value : null;
+    const ipLocData = ipLocationResult.status === "fulfilled" ? ipLocationResult.value : null;
+
+    // Build server info from results
     let server = undefined;
     if (ipAddress) {
       server = {
         ip: ipAddress,
-        location: ipLocationResult,
-        blacklisted: ipBlacklisted.status === "fulfilled" ? ipBlacklisted.value : null,
+        location: ipLocData,
+        blacklisted: ipBlacklistedResult.status === "fulfilled" ? ipBlacklistedResult.value : null,
       };
     }
 
-    const techStackValue = techStackResult.techs;
-    const techStackHealth = this.techStack.analyzeHealth(techStackValue);
+    const techStackHealth = this.techStack.analyzeHealth(techs);
     const spfRecord = dnsData?.records.find(
       (r) => r.type === "TXT" && r.data.toLowerCase().startsWith("v=spf1"),
     )?.data;
@@ -128,45 +135,34 @@ export class ScanService {
 
     onProgress?.({ scanId, step: "completed", progress: 100 });
 
+    const secRes = securityResult.status === "fulfilled" ? securityResult.value : null;
+
     return {
       url,
       domain,
       scannedAt: new Date().toISOString(),
-      techStack: techStackValue,
+      techStack: techs,
       techStackHealth,
       dns: dnsData ?? { records: [], nameservers: [] },
-      ssl: ssl.status === "fulfilled" ? ssl.value : null,
+      ssl: sslResult.status === "fulfilled" ? sslResult.value : null,
       server,
-      security:
-        security.status === "fulfilled"
-          ? { headers: security.value.headers, score: security.value.score }
-          : undefined,
-      cookieAudit: security.status === "fulfilled" ? security.value.cookies : undefined,
+      security: secRes ? { headers: secRes.headers, score: secRes.score } : undefined,
+      cookieAudit: secRes ? secRes.cookies : undefined,
       vulnerabilityExposure: vulnerabilities.status === "fulfilled" ? vulnerabilities.value : undefined,
-      trustAudit:
-        htmlResponse.status === "fulfilled"
-          ? this.trust.analyzeScripts(htmlResponse.value, domain)
-          : undefined,
-      connectivity:
-        connectivity.status === "fulfilled"
-          ? {
-              redirectChain: connectivity.value.chain,
-              wwwRedirectStatus: connectivity.value.wwwStatus,
-              isHstsPreloadReady: security.status === "fulfilled" ? security.value.isHstsPreloadReady : false,
-              socialLinks:
-                htmlResponse.status === "fulfilled"
-                  ? this.connectivity.auditSocialLinks(htmlResponse.value)
-                  : [],
-            }
-          : undefined,
+      trustAudit: html ? this.trust.analyzeScripts(html, domain) : undefined,
+      connectivity: connectivityResult.status === "fulfilled" 
+        ? {
+            redirectChain: connectivityResult.value.chain,
+            wwwRedirectStatus: connectivityResult.value.wwwStatus,
+            isHstsPreloadReady: secRes ? secRes.isHstsPreloadReady : false,
+            socialLinks: html ? this.connectivity.auditSocialLinks(html) : [],
+          }
+        : undefined,
       emailSecurity: {
         spf: this.email.analyzeSpf(spfRecord ?? ""),
         dmarc: this.email.analyzeDmarc(dmarcRecord ?? ""),
       },
-      privacyAudit:
-        htmlResponse.status === "fulfilled"
-          ? this.privacy.analyzePrivacy(htmlResponse.value)
-          : undefined,
+      privacyAudit: privacy.status === "fulfilled" ? privacy.value : undefined,
     };
   }
 

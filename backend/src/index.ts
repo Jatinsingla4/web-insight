@@ -2,6 +2,8 @@ import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "./routers";
 import { createContextFactory } from "./routers/context";
 import { AuthService } from "./services/auth.service";
+import { ReminderService } from "./services/reminder.service";
+import { NotificationService } from "./services/notification.service";
 import type { Env } from "./lib/env";
 
 // Re-export Durable Objects for wrangler
@@ -77,6 +79,39 @@ export default {
         corsHeaders,
         500,
       );
+    }
+  },
+
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    console.log(`[Cron] Running daily security audit: ${controller.cron}`);
+    
+    const reminderService = new ReminderService(env.DB);
+    const notificationService = new NotificationService(env.RESEND_API_KEY || "placeholder");
+    
+    try {
+      const expiringCerts = await reminderService.getExpiringCertificates();
+      console.log(`[Cron] Found ${expiringCerts.length} certificates hitting thresholds.`);
+      
+      for (const cert of expiringCerts) {
+        const html = notificationService.generateSslExpiryTemplate({
+          domain: cert.domain,
+          daysLeft: cert.daysLeft,
+          expiryDate: cert.expiryDate,
+          userName: cert.userName,
+        });
+        
+        await notificationService.sendEmail({
+          to: cert.recipients,
+          subject: `URGENT: SSL Certificate for ${cert.domain} expires in ${cert.daysLeft} days`,
+          html,
+        });
+        
+        await reminderService.markAsReminded(cert.id);
+      }
+      
+      console.log("[Cron] Daily security audit completed successfully.");
+    } catch (error) {
+      console.error("[Cron] Security audit failed:", error);
     }
   },
 } satisfies ExportedHandler<Env>;

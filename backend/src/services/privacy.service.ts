@@ -1,9 +1,15 @@
 export class PrivacyService {
-  public analyzePrivacy(html: string): {
+  public async analyzePrivacy(html: string, baseUrl: string): Promise<{
     trackingPixels: string[];
     hasPrivacyPolicy: boolean;
     hasTermsOfService: boolean;
-  } {
+    policyAnalysis?: {
+      verified: boolean;
+      containsGdprLinks: boolean;
+      containsCcpaLinks: boolean;
+      lastCheckedAt: string;
+    };
+  }> {
     const trackingPixels: string[] = [];
     const pixelPatterns = [
       { name: "Facebook Pixel", pattern: /connect\.facebook\.net\/[^/]+\/fbevents\.js/i },
@@ -14,43 +20,56 @@ export class PrivacyService {
       { name: "TikTok Pixel", pattern: /analytics\.tiktok\.com/i },
       { name: "LinkedIn Insight", pattern: /snap\.licdn\.com\/li\.lms-analytics/i },
       { name: "Microsoft Clarity", pattern: /clarity\.ms\/tag/i },
-      { name: "Mixpanel", pattern: /cdn\.mxpnl\.com|api\.mixpanel\.com/i },
       { name: "Segment", pattern: /cdn\.segment\.com\/analytics/i },
       { name: "Plausible", pattern: /plausible\.io\/js/i },
-      { name: "Heap Analytics", pattern: /cdn\.heapanalytics\.com/i },
-      { name: "Amplitude", pattern: /cdn\.amplitude\.com/i },
-      { name: "FullStory", pattern: /fullstory\.com\/s\/fs\.js/i },
-      { name: "Pinterest Tag", pattern: /pintrk|s\.pinimg\.com\/ct\/core\.js/i },
-      { name: "Snap Pixel", pattern: /tr\.snapchat\.com/i },
-      { name: "Twitter Pixel", pattern: /static\.ads-twitter\.com\/uwt\.js/i },
     ];
 
     for (const pixel of pixelPatterns) {
-      if (pixel.pattern.test(html)) {
-        trackingPixels.push(pixel.name);
-      }
+      if (pixel.pattern.test(html)) trackingPixels.push(pixel.name);
     }
 
-    // Check for privacy policy — look for actual links/pages, not just the word "privacy"
-    const hasPrivacyPolicy =
-      /href=["'][^"']*privacy[- ]?(policy|statement|notice)[^"']*["']/i.test(html) ||
-      /href=["'][^"']*\/privacy[^"']*["']/i.test(html) ||
-      /href=["'][^"']*cookie[- ]?policy[^"']*["']/i.test(html) ||
-      /href=["'][^"']*data[- ]?protection[^"']*["']/i.test(html) ||
-      /<a[^>]*>.*?(privacy\s*(policy|statement|notice)|cookie\s*policy|data\s*protection).*?<\/a>/i.test(html);
+    const policyUrlMatch = html.match(/href=["']([^"']*(?:privacy|cookie|data-protection)[^"']*)["']/i);
+    const policyUrl = policyUrlMatch ? this.normalizeUrl(policyUrlMatch[1], baseUrl) : null;
 
-    // Check for terms of service — look for actual links/pages
-    const hasTermsOfService =
-      /href=["'][^"']*terms[- ]?of[- ]?(service|use)[^"']*["']/i.test(html) ||
-      /href=["'][^"']*\/terms[^"']*["']/i.test(html) ||
-      /href=["'][^"']*(user[- ]?agreement|legal[- ]?notice|disclaimer|eula)[^"']*["']/i.test(html) ||
-      /href=["'][^"']*terms[- ]?and[- ]?conditions[^"']*["']/i.test(html) ||
-      /<a[^>]*>.*?(terms\s*(of\s*)?(service|use|conditions)|user\s*agreement|legal\s*notice|disclaimer|t&c|eula).*?<\/a>/i.test(html);
+    const hasPrivacyPolicy = !!policyUrl;
+    const hasTermsOfService = /href=["'][^"']*(?:terms|condition|legal|disclaimer)[^"']*["']/i.test(html);
+
+    let policyAnalysis;
+    if (policyUrl) {
+      policyAnalysis = await this.deepAnalyzePolicy(policyUrl);
+    }
 
     return {
       trackingPixels,
       hasPrivacyPolicy,
       hasTermsOfService,
+      policyAnalysis,
     };
+  }
+
+  private async deepAnalyzePolicy(url: string): Promise<any> {
+    try {
+      const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (!resp.ok) return { verified: false, containsGdprLinks: false, containsCcpaLinks: false };
+      
+      const text = await resp.text();
+      const snippet = text.slice(0, 30000).toLowerCase();
+
+      return {
+        verified: true,
+        containsGdprLinks: snippet.includes("gdpr") || snippet.includes("general data protection regulation") || snippet.includes("european union"),
+        containsCcpaLinks: snippet.includes("ccpa") || snippet.includes("california consumer privacy act") || snippet.includes("california resident"),
+        lastCheckedAt: new Date().toISOString(),
+      };
+    } catch {
+      return { verified: false, containsGdprLinks: false, containsCcpaLinks: false };
+    }
+  }
+
+  private normalizeUrl(url: string, base: string): string {
+    if (url.startsWith("http")) return url;
+    const origin = new URL(base).origin;
+    if (url.startsWith("/")) return `${origin}${url}`;
+    return `${origin}/${url}`;
   }
 }

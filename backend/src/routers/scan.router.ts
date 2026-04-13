@@ -152,11 +152,11 @@ export const scanRouter = router({
   getLatest: protectedProcedure
     .input(brandIdSchema)
     .query(async ({ ctx, input }) => {
-      // Get the latest scan record
+      // Get the latest COMPLETED scan — skip "running" scans that have no data yet
       const scan = await ctx.env.DB.prepare(
         `SELECT s.id, s.raw_response_r2_key FROM scans s
          JOIN brands b ON s.brand_id = b.id
-         WHERE s.brand_id = ? AND b.user_id = ?
+         WHERE s.brand_id = ? AND b.user_id = ? AND s.status = 'completed'
          ORDER BY s.created_at DESC LIMIT 1`,
       )
         .bind(input.id, ctx.session.userId)

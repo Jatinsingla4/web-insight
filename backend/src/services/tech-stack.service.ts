@@ -143,12 +143,15 @@ export class TechStackService {
       { regex: /font-awesome|fa-/i, name: "Font Awesome", categories: ["Icon sets"] },
       { regex: /gsap|TweenMax/i, name: "GSAP", categories: ["JavaScript libraries"] },
       { regex: /three\.js|three\.min\.js/i, name: "Three.js", categories: ["JavaScript libraries"] },
-
-      // CSS & Styles
-      { regex: /tailwindcss|tailwind|tw-/i, name: "Tailwind CSS", categories: ["UI frameworks"] },
-      { regex: /bootstrap(?:\.min)?\.(?:css|js)/i, name: "Bootstrap", categories: ["UI frameworks"], version: /bootstrap[\/\-@]([\d.]+)/i },
-      { regex: /bulma/i, name: "Bulma", categories: ["UI frameworks"] },
-      { regex: /materialize/i, name: "Materialize", categories: ["UI frameworks"] },
+      
+      // CSS & Styles (Enhanced with class signatures)
+      { regex: /tailwindcss|tailwind|tw-|mt-|px-|py-/i, name: "Tailwind CSS", categories: ["UI frameworks"] },
+      { regex: /bootstrap(?:\.min)?\.(?:css|js)|row\s+col-|btn- primary/i, name: "Bootstrap", categories: ["UI frameworks"], version: /bootstrap[\/\-@]([\d.]+)/i },
+      { regex: /bulma|is-primary|is-flex/i, name: "Bulma", categories: ["UI frameworks"] },
+      { regex: /materialize|m-s(\d+)/i, name: "Materialize", categories: ["UI frameworks"] },
+      { regex: /chakra-ui|css-[\w]{5,}/i, name: "Chakra UI", categories: ["UI frameworks"] },
+      { regex: /styled-components|sc-[\w]{5,}/i, name: "Styled Components", categories: ["Libraries & Languages"] },
+      { regex: /emotion|css-[\w]{5,}-/i, name: "Emotion", categories: ["Libraries & Languages"] },
 
       // CMS & Enterprise Platforms
       { regex: /wp-content|wp-includes|wordpress/i, name: "WordPress", categories: ["CMS"] },
@@ -161,6 +164,13 @@ export class TechStackService {
       { regex: /Sitecore\.Context|scSite/i, name: "Sitecore", categories: ["CMS"] },
       { regex: / Demandware|dw\.js|dwpersonalization/i, name: "Salesforce Commerce Cloud", categories: ["Ecommerce"] },
       { regex: /hubspot/i, name: "HubSpot", categories: ["Marketing automation", "CMS"] },
+      
+      // Modern Tools
+      { regex: /firebase/i, name: "Firebase", categories: ["PaaS"] },
+      { regex: /supabase/i, name: "Supabase", categories: ["PaaS"] },
+      { regex: /resend/i, name: "Resend", categories: ["Email marketing"] },
+      { regex: /posthog/i, name: "PostHog", categories: ["Analytics"] },
+      { regex: /sentry/i, name: "Sentry", categories: ["Error tracking"] },
 
       // Analytics & Marketing
       { regex: /gtag|googletagmanager|google-analytics/i, name: "Google Tag Manager", categories: ["Tag managers"] },

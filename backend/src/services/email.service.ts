@@ -1,101 +1,82 @@
-export interface EmailAudit {
-  spf: {
-    isValid: boolean;
-    lookupCount: number;
-    mechanism: string;
-    securityStatus: "secure" | "warning" | "unsafe";
-    recommendation?: string;
-  };
-  dmarc: {
-    isFound: boolean;
-    policy: string;
-    securityStatus: "secure" | "warning" | "unsafe";
-    recommendation?: string;
-  };
-}
-
 export class EmailService {
-  public analyzeSpf(spfRecord: string): EmailAudit["spf"] {
-    // No SPF record found
-    if (!spfRecord || !spfRecord.toLowerCase().startsWith("v=spf1")) {
+  /**
+   * Analyze an SPF record for security best practices.
+   */
+  analyzeSpf(record: string) {
+    const isFound = !!record && record.toLowerCase().startsWith("v=spf1");
+    if (!isFound) {
       return {
         isValid: false,
         lookupCount: 0,
-        mechanism: "Not Found",
-        securityStatus: "unsafe",
-        recommendation: "No SPF record found. Add a TXT record starting with 'v=spf1' to authorize your mail servers and prevent spoofing.",
+        mechanism: "none",
+        securityStatus: "unsafe" as const,
+        recommendation: "Missing SPF record. This allows anyone to spoof emails from your domain.",
       };
     }
 
-    const mechanisms = spfRecord.split(/\s+/);
-    let lookups = 0;
+    // Simplified logic for SPF analysis
+    const hasAll = record.includes("-all") || record.includes("~all");
+    const isHardFail = record.includes("-all");
+    
+    // Heuristic for lookup count (just for demonstration)
+    const lookupCount = (record.match(/include:|a:|mx:/g) || []).length;
 
-    // RFC 7208: mechanisms that count toward the 10-lookup limit
-    const lookupMechs = ["include", "a", "mx", "ptr", "exists", "redirect"];
+    let securityStatus: "secure" | "warning" | "unsafe" = "warning";
+    let recommendation = "";
 
-    for (const mech of mechanisms) {
-      if (lookupMechs.some(m => mech.toLowerCase().startsWith(m))) {
-        lookups++;
-      }
-    }
-
-    const hasStrictFail = spfRecord.includes("-all");
-    const hasSoftFail = spfRecord.includes("~all");
-
-    let status: "secure" | "warning" | "unsafe" = "unsafe";
-    if (hasStrictFail && lookups <= 10) status = "secure";
-    else if (hasSoftFail) status = "warning";
-    else if (lookups > 10) status = "warning";
-
-    let recommendation: string | undefined;
-    if (!hasStrictFail && !hasSoftFail) {
-      recommendation = "SPF record has no enforcement mechanism. Add '-all' (Strict Fail) to reject unauthorized senders.";
-    } else if (hasSoftFail) {
-      recommendation = "Upgrade SPF from '~all' (Soft Fail) to '-all' (Strict Fail) for stronger protection against spoofing.";
-    }
-    if (lookups > 10) {
-      recommendation = (recommendation ? recommendation + " " : "") +
-        `SPF has ${lookups} DNS lookups (RFC limit is 10). Flatten nested includes to ensure reliable delivery.`;
+    if (isHardFail && lookupCount <= 10) {
+      securityStatus = "secure";
+    } else if (lookupCount > 10) {
+      securityStatus = "unsafe";
+      recommendation = "SPF record has too many lookups (>10). Some recipients may reject your emails.";
+    } else if (!isHardFail) {
+      recommendation = "SPF record uses soft-fail (~all). Consider switching to hard-fail (-all) for better security.";
     }
 
     return {
       isValid: true,
-      lookupCount: lookups,
-      mechanism: hasStrictFail ? "Strict Fail (-all)" : hasSoftFail ? "Soft Fail (~all)" : "Neutral/None",
-      securityStatus: status,
-      recommendation,
+      lookupCount,
+      mechanism: isHardFail ? "Hard Fail" : "Soft Fail",
+      securityStatus,
+      recommendation: recommendation || "SPF record is correctly configured.",
     };
   }
 
-  public analyzeDmarc(dmarcRecord: string): EmailAudit["dmarc"] {
-    // No DMARC record found
-    if (!dmarcRecord || !dmarcRecord.toLowerCase().startsWith("v=dmarc1")) {
+  /**
+   * Analyze a DMARC record for security policy strength.
+   */
+  analyzeDmarc(record: string) {
+    const isFound = !!record && record.toLowerCase().startsWith("v=dmarc1");
+    if (!isFound) {
       return {
         isFound: false,
-        policy: "NONE",
-        securityStatus: "unsafe",
-        recommendation: "No DMARC record found. Add a TXT record at _dmarc.yourdomain.com with 'v=DMARC1; p=reject' to prevent email impersonation.",
+        policy: "none",
+        securityStatus: "unsafe" as const,
+        recommendation: "Missing DMARC record. Email spoofing protection is not enforced.",
       };
     }
 
-    const policyMatch = dmarcRecord.match(/p=([^;\s]+)/i);
-    const policy = policyMatch ? policyMatch[1].trim().toLowerCase() : "none";
+    const policyMatch = record.match(/p=([^;]+)/i);
+    const policy = policyMatch ? policyMatch[1].toLowerCase() : "none";
 
-    let status: "secure" | "warning" | "unsafe" = "unsafe";
-    if (policy === "reject") status = "secure";
-    else if (policy === "quarantine") status = "warning";
+    let securityStatus: "secure" | "warning" | "unsafe" = "warning";
+    let recommendation = "";
 
-    let recommendation: string | undefined;
-    if (policy === "none") {
-      recommendation = "DMARC policy is 'p=none' (monitor only). Upgrade to 'p=quarantine' or 'p=reject' to actively block spoofed emails.";
+    if (policy === "reject") {
+      securityStatus = "secure";
+      recommendation = "DMARC policy is set to 'reject', providing maximum protection.";
     } else if (policy === "quarantine") {
-      recommendation = "DMARC policy is 'p=quarantine'. Consider upgrading to 'p=reject' for maximum protection.";
+      securityStatus = "warning";
+      recommendation = "DMARC policy is set to 'quarantine'. Consider moving to 'reject' once traffic is verified.";
+    } else {
+      securityStatus = "unsafe";
+      recommendation = "DMARC policy is set to 'none' (monitoring only). Spoofing is not being blocked.";
     }
 
     return {
       isFound: true,
       policy: policy.toUpperCase(),
-      securityStatus: status,
+      securityStatus,
       recommendation,
     };
   }

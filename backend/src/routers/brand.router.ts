@@ -110,11 +110,11 @@ export const brandRouter = router({
       if (input.initialScanData) {
         await scanService.saveExistingResult(id, input.initialScanData as any);
       } else {
-        // Trigger initial scan in background
+        // Trigger initial scan in background — pass ctx so SSL deep scan can use waitUntil
         ctx.waitUntil(
           (async () => {
             try {
-              await scanService.brandScan(id, input.domain);
+              await scanService.brandScan(id, input.domain, undefined, ctx);
             } catch {
               // Initial scan failure is non-critical
             }
@@ -149,13 +149,13 @@ export const brandRouter = router({
         .bind(name, domain, input.id)
         .run();
  
-      // If domain changed, trigger a fresh scan immediately
+      // If domain changed, trigger a fresh scan immediately — pass ctx for SSL deep scan
       if (domainChanged) {
         ctx.waitUntil(
           (async () => {
             try {
               const scanService = new ScanService(ctx.env);
-              await scanService.brandScan(input.id, domain);
+              await scanService.brandScan(input.id, domain, undefined, ctx);
             } catch (err) {
               console.error(`Failed to trigger refresh scan for brand ${input.id}:`, err);
             }

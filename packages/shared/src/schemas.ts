@@ -77,6 +77,11 @@ export const sslCertificateSchema = z.object({
   tls12Enabled: z.boolean().nullable(),
   ctCompliant: z.boolean().nullable(),
   caaRecordPresent: z.boolean().nullable(),
+  // Direct TCP extraction fields
+  cipherSuiteName: z.string().nullable().optional(),
+  chainLength: z.number().nullable().optional(),
+  sctCount: z.number().nullable().optional(),
+  isSelfSigned: z.boolean().nullable().optional(),
   deepScanStatus: z.enum(["pending", "scanning", "ready", "failed"]).optional(),
   scannedAt: z.string().optional(),
   recommendation: z.string().optional(),
@@ -90,6 +95,17 @@ export const scanResultSchema = z.object({
   dns: z.object({
     records: z.array(dnsRecordSchema),
     nameservers: z.array(z.string()),
+    whois: z.object({
+      registrar: z.string().nullable(),
+      createdDate: z.string().nullable(),
+      expiryDate: z.string().nullable(),
+      isExpiringSoon: z.boolean().nullable(),
+    }).optional(),
+    consensus: z.object({
+      isConsistent: z.boolean(),
+      resolversChecked: z.array(z.string()),
+      warnings: z.array(z.string()),
+    }).optional(),
     audit: z.object({
       spfStatus: z.string().nullable(),
       dmarcStatus: z.string().nullable(),
@@ -99,7 +115,11 @@ export const scanResultSchema = z.object({
       recommendations: z.array(z.string()).optional(),
     }).optional(),
   }),
-  ssl: sslCertificateSchema.nullable(),
+  ssl: sslCertificateSchema.extend({
+    ocspStapling: z.boolean().nullable().optional(),
+    ctCompliant: z.boolean().nullable().optional(),
+    ctLogsCount: z.number().nullable().optional(),
+  }).nullable(),
   server: z.object({
     ip: z.string().nullable(),
     location: z.object({
@@ -181,6 +201,12 @@ export const scanResultSchema = z.object({
     trackingPixels: z.array(z.string()),
     hasPrivacyPolicy: z.boolean(),
     hasTermsOfService: z.boolean(),
+    policyAnalysis: z.object({
+      verified: z.boolean(),
+      containsGdprLinks: z.boolean(),
+      containsCcpaLinks: z.boolean(),
+      lastCheckedAt: z.string().optional(),
+    }).optional(),
   }).optional(),
 });
 
@@ -200,6 +226,9 @@ export const updateBrandSchema = z.object({
 export const sslReminderInputSchema = z.object({
   domain: z.string().min(1).max(255),
   expiryDate: z.string(),
+  notifyEmails: z.array(z.string().email("Invalid email format")).default([]),
+  thresholdDays: z.array(z.number().min(1).max(365)).default([30, 7, 1]),
+  isEnabled: z.boolean().default(true),
 });
 
 export type SslReminderInput = z.infer<typeof sslReminderInputSchema>;

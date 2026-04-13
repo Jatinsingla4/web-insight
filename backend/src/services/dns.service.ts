@@ -104,6 +104,8 @@ export class DnsService {
   async lookup(domain: string, force = false): Promise<{
     records: DnsRecord[];
     nameservers: string[];
+    whois?: any;
+    consensus?: any;
     audit: any;
   }> {
     const cacheKey = `dns:v3:${domain}`;
@@ -114,14 +116,16 @@ export class DnsService {
 
     const apexDomain = this.getApexDomain(domain);
     
-    // Deep Probing: Parallel queries for Internal, Apex, DMARC, BIMI-Discovery, and DNSSEC-DS
+    // Deep Probing: Parallel queries for Internal, Apex, DMARC, BIMI-Discovery, DNSSEC-DS, WHOIS, and Consensus
     const [
       rootRecords, 
       apexRecords, 
       dmarcResponse, 
       bimiDiscovery, 
       dsProbing,
-      externalRecords
+      externalRecords,
+      whoisData,
+      consensusData
     ] = await Promise.all([
       this.fetchAllRecords(domain),
       domain !== apexDomain ? this.fetchAllRecords(apexDomain) : Promise.resolve({ records: [], dnssec: false }),
@@ -134,6 +138,8 @@ export class DnsService {
       this.discoverBimi(domain, apexDomain),
       this.queryDns(domain, "DS"), // Direct DS-record probing (Ground Truth)
       this.queryExternalFallback(domain),
+      this.lookupWhois(apexDomain),
+      this.runConsensusCheck(domain),
     ]);
 
     // Merge and deduplicate records
@@ -174,13 +180,92 @@ export class DnsService {
       recommendations: this.generateRecommendations(records, dnssecEnabled),
     };
 
-    const result = { records, nameservers: records.filter(r => r.type === "NS").map(r => r.data), audit };
+    const result = { 
+      records, 
+      nameservers: records.filter(r => r.type === "NS").map(r => r.data), 
+      whois: whoisData,
+      consensus: consensusData,
+      audit 
+    };
 
     await this.cache.put(cacheKey, JSON.stringify(result), {
       expirationTtl: CACHE_TTL_SECONDS,
     });
 
     return result;
+  }
+
+  /** Fetch registration and expiry data via RDAP */
+  private async lookupWhois(domain: string): Promise<any> {
+    try {
+      const url = `https://rdap.org/domain/${encodeURIComponent(domain)}`;
+      const response = await fetch(url, {
+        headers: { "Accept": "application/rdap+json" },
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (!response.ok) return null;
+      const data = await response.json() as any;
+
+      const events = data.events || [];
+      const createdEvent = events.find((e: any) => e.eventAction === "registration");
+      const expiryEvent = events.find((e: any) => e.eventAction === "expiration");
+
+      const createdDate = createdEvent ? createdEvent.eventDate : null;
+      const expiryDate = expiryEvent ? expiryEvent.eventDate : null;
+      
+      let isExpiringSoon = false;
+      if (expiryDate) {
+        const daysLeft = Math.ceil((new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        isExpiringSoon = daysLeft < 30;
+      }
+
+      return {
+        registrar: data.entities?.[0]?.vcardArray?.[1]?.find((v: any) => v[0] === "fn")?.[3] || "Unknown",
+        createdDate,
+        expiryDate,
+        isExpiringSoon,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Compare A and MX records across multiple resolvers to detect hijacking */
+  private async runConsensusCheck(domain: string): Promise<any> {
+    const resolvers = DNS_RESOLVERS.slice(0, 3); // Google, Cloudflare, NextDNS
+    const checks = resolvers.map(r => this.queryResolver(r.url, domain, 1)); // Type A = 1
+    
+    try {
+      const settled = await Promise.allSettled(checks);
+      const results: string[][] = [];
+      const warnings: string[] = [];
+
+      settled.forEach((res, i) => {
+        if (res.status === "fulfilled") {
+          results.push(res.value.records.map(r => r.data).sort());
+        } else {
+          warnings.push(`Resolver ${resolvers[i].name} failed.`);
+        }
+      });
+
+      if (results.length < 2) return { isConsistent: true, resolversChecked: resolvers.map(r => r.name), warnings };
+
+      const first = JSON.stringify(results[0]);
+      const inconsistent = results.some(r => JSON.stringify(r) !== first);
+
+      if (inconsistent) {
+        warnings.push("CRITICAL: DNS Resolution inconsistency detected across different global providers! Potential DNS hijacking or poisoning.");
+      }
+
+      return {
+        isConsistent: !inconsistent,
+        resolversChecked: resolvers.map(r => r.name),
+        warnings,
+      };
+    } catch {
+      return { isConsistent: true, resolversChecked: [], warnings: [] };
+    }
   }
 
   private async discoverBimi(domain: string, apexDomain: string): Promise<DnsRecord[]> {

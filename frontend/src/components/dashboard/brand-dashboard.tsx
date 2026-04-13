@@ -6,9 +6,10 @@ import { ScanResults } from "@/components/scan/scan-results";
 import { ScanComparison } from "@/components/scan/scan-comparison";
 import { HistoricalAudits } from "@/components/dashboard/historical-audits";
 import { Spinner } from "@/components/ui/spinner";
-import { AlertCircle, RefreshCw, BarChart3, Globe, Trash2, Scale, History, ChevronLeft } from "lucide-react";
+import { AlertCircle, RefreshCw, BarChart3, Globe, Trash2, Scale, History, ChevronLeft, Bell } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef } from "react";
+import { MonitoringSettings } from "@/components/dashboard/monitoring-settings";
 
 interface BrandDashboardProps {
   brandId: string;
@@ -18,7 +19,7 @@ interface BrandDashboardProps {
 
 export function BrandDashboard({ brandId, brandName, brandDomain }: BrandDashboardProps) {
   const [isScanning, setIsScanning] = useState(false);
-  const [viewMode, setViewMode] = useState<"latest" | "compare" | "history">("latest");
+  const [viewMode, setViewMode] = useState<"latest" | "compare" | "history" | "monitoring">("latest");
   const [compareScanId, setCompareScanId] = useState<string | null>(null);
   const [viewScanId, setViewScanId] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
@@ -169,9 +170,14 @@ export function BrandDashboard({ brandId, brandName, brandDomain }: BrandDashboa
                 {brandName}
               </h1>
               {viewScanId && (
-                <div className="px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-widest rounded flex items-center gap-1">
-                   <History className="h-3 w-3" />
-                   Reviewing History
+                <div className="group relative">
+                  <div className="px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-widest rounded flex items-center gap-1 cursor-help">
+                    <History className="h-3 w-3" />
+                    Reviewing History
+                  </div>
+                  <div className="absolute top-full left-0 mt-2 hidden group-hover:block w-48 bg-surface-900 text-white text-[10px] px-3 py-2 rounded-xl shadow-2xl z-50 font-normal border border-surface-700 animate-in fade-in duration-200">
+                    You are viewing a past snapshot. Some real-time metrics may have changed.
+                  </div>
                 </div>
               )}
             </div>
@@ -197,50 +203,84 @@ export function BrandDashboard({ brandId, brandName, brandDomain }: BrandDashboa
                      POD SCANNING...
                    </div>
                  )}
-                 <button
-                   onClick={handleRescan}
-                   disabled={isScanning || rescanMutation.isPending}
-                   className="btn-primary h-10 px-4 text-[11px] font-black tracking-widest gap-2 shadow-md shadow-brand-100 disabled:opacity-50"
-                 >
-                   {(rescanMutation.isPending) ? (
-                     <Spinner size="sm" />
-                   ) : (
-                     <RefreshCw className={`h-3.5 w-3.5 ${isScanning ? 'animate-spin' : ''}`} />
-                   )}
-                   {isScanning ? 'IN PROGRESS' : 'TRIGGER NEW SCAN'}
-                 </button>
+                 <div className="group relative">
+                   <button
+                     onClick={handleRescan}
+                     disabled={isScanning || rescanMutation.isPending}
+                     className="btn-primary h-10 px-4 text-[11px] font-black tracking-widest gap-2 shadow-md shadow-brand-100 disabled:opacity-50"
+                   >
+                     {(rescanMutation.isPending) ? (
+                       <Spinner size="sm" />
+                     ) : (
+                       <RefreshCw className={`h-3.5 w-3.5 ${isScanning ? 'animate-spin' : ''}`} />
+                     )}
+                     {isScanning ? 'IN PROGRESS' : 'TRIGGER NEW SCAN'}
+                   </button>
+                   <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover:block w-48 bg-surface-900 text-white text-[10px] px-3 py-2 rounded-xl shadow-2xl z-50 text-center font-normal border border-surface-700 animate-in fade-in duration-200">
+                     Run a fresh, deep-scan of your infrastructure to detect recent changes.
+                   </div>
+                 </div>
                </>
              )}
 
-             <button
-                onClick={() => {
-                  if (viewMode === "history") {
-                    setViewMode("latest");
-                  } else {
-                    setViewMode("history");
-                  }
-                }}
-                className={`btn-outline h-10 px-4 text-[11px] font-black tracking-widest gap-2 shadow-sm transition-all focus:ring-0 ${viewMode === "history" ? "bg-brand-50 border-brand-200 text-brand-700" : ""}`}
-              >
-                <History className="h-4 w-4" />
-                HISTORY & TIMELINE
-              </button>
+              <div className="group relative">
+                <button
+                  onClick={() => {
+                    if (viewMode === "history") {
+                      setViewMode("latest");
+                    } else {
+                      setViewMode("history");
+                    }
+                  }}
+                  className={`btn-outline h-10 px-4 text-[11px] font-black tracking-widest gap-2 shadow-sm transition-all focus:ring-0 ${viewMode === "history" ? "bg-brand-50 border-brand-200 text-brand-700" : ""}`}
+                >
+                  <History className="h-4 w-4" />
+                  HISTORY & TIMELINE
+                </button>
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover:block w-48 bg-surface-900 text-white text-[10px] px-3 py-2 rounded-xl shadow-2xl z-50 text-center font-normal border border-surface-700 animate-in fade-in duration-200">
+                  View all past audits and track your security progress over time.
+                </div>
+              </div>
 
-             <button
-                onClick={() => {
-                  if (viewMode === "compare") {
-                    setViewMode("latest");
-                    setCompareScanId(null);
-                  } else {
-                    setViewMode("compare");
-                    refetchCompare();
-                  }
-                }}
-                className={`btn-outline h-10 px-4 text-[11px] font-black tracking-widest gap-2 shadow-sm transition-all focus:ring-0 ${viewMode === "compare" ? "bg-brand-50 border-brand-200 text-brand-700" : ""}`}
-              >
-                <Scale className="h-4 w-4" />
-                {viewMode === "compare" ? "SHOW LATEST SCAN" : "COMPARATIVE ANALYSIS"}
-              </button>
+              <div className="group relative">
+                <button
+                  onClick={() => {
+                    if (viewMode === "compare") {
+                      setViewMode("latest");
+                      setCompareScanId(null);
+                    } else {
+                      setViewMode("compare");
+                      refetchCompare();
+                    }
+                  }}
+                  className={`btn-outline h-10 px-4 text-[11px] font-black tracking-widest gap-2 shadow-sm transition-all focus:ring-0 ${viewMode === "compare" ? "bg-brand-50 border-brand-200 text-brand-700" : ""}`}
+                >
+                  <Scale className="h-4 w-4" />
+                  {viewMode === "compare" ? "SHOW LATEST SCAN" : "COMPARATIVE ANALYSIS"}
+                </button>
+                <div className="absolute top-full right-0 mt-2 hidden group-hover:block w-56 bg-surface-900 text-white text-[10px] px-3 py-2 rounded-xl shadow-2xl z-50 text-center font-normal border border-surface-700 animate-in fade-in duration-200">
+                  Compare current results with previous audits to verify security hardening.
+                </div>
+              </div>
+
+              <div className="group relative">
+                <button
+                  onClick={() => {
+                    if (viewMode === "monitoring") {
+                      setViewMode("latest");
+                    } else {
+                      setViewMode("monitoring");
+                    }
+                  }}
+                  className={`btn-outline h-10 px-4 text-[11px] font-black tracking-widest gap-2 shadow-sm transition-all focus:ring-0 ${viewMode === "monitoring" ? "bg-brand-50 border-brand-200 text-brand-700" : ""}`}
+                >
+                  <Bell className="h-4 w-4" />
+                  ALERTS & MONITORING
+                </button>
+                <div className="absolute top-full right-0 mt-2 hidden group-hover:block w-56 bg-surface-900 text-white text-[10px] px-3 py-2 rounded-xl shadow-2xl z-50 text-center font-normal border border-surface-700 animate-in fade-in duration-200">
+                  Configure proactive email alerts for SSL certificate expirations.
+                </div>
+              </div>
              <button
                onClick={() => {
                  if (window.confirm(`CRITICAL: Purge "${brandName}" and all associated data permanently?`)) {
@@ -282,6 +322,11 @@ export function BrandDashboard({ brandId, brandName, brandDomain }: BrandDashboa
             <p className="mt-4 text-xs font-black uppercase tracking-widest text-surface-400">Loading Intelligence...</p>
           </div>
         )
+      ) : viewMode === "monitoring" ? (
+        <MonitoringSettings 
+          domain={brandDomain} 
+          expiryDate={activeScan?.ssl?.validTo || new Date().toISOString()} 
+        />
       ) : (
         <ScanResults 
           data={activeScan!} 
