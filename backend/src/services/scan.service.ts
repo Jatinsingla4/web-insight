@@ -56,23 +56,24 @@ export class ScanService {
 
     onProgress?.({ scanId, step: "scanning", progress: 0 });
 
-    // Phase 1: Resolve A record quickly for IP, then fire everything in parallel
-    let ipAddress: string | null = null;
-    try {
-      // 3s strict timeout for initial IP resolution
-      const timeoutPromise = new Promise<null>((_, reject) => 
-        setTimeout(() => reject(new Error("DNS Timeout")), 3000)
-      );
-      
-      ipAddress = await Promise.race([
-        this.dns.quickResolveA(domain),
-        timeoutPromise
-      ]);
-    } catch {
-      // DNS A record failed or timed out — continue without IP
+    const cacheKey = `global:scan:v1:${domain}`;
+
+    // 1. Check Global Application Cache
+    if (!force) {
+      const cached = await this.env.CACHE.get<ScanResult>(cacheKey, "json");
+      if (cached) {
+        onProgress?.({ scanId, step: "completed", progress: 100 });
+        return {
+          ...cached,
+          scannedAt: cached.scannedAt, // Keep original scan time or update? User wants "Instant", so showing original is more honest
+          isCached: true, // Optional: flag for UI
+        } as ScanResult;
+      }
     }
 
-    // Phase 2: Parallel Discovery & Baseline Scans
+    // Phase 1: Parallel DNS resolution + Baseline Scans that do NOT depend on IP
+    const ipResolvePromise = this.dns.quickResolveA(domain).catch(() => null);
+    
     const [
       techStackResult,
       dnsResult,
@@ -80,8 +81,6 @@ export class ScanService {
       securityResult,
       htmlResponse,
       connectivityResult,
-      ipLocationResult,
-      ipBlacklistedResult,
     ] = await Promise.allSettled([
       this.techStack.analyze(url, force),
       this.dns.lookup(domain, force),
@@ -96,6 +95,16 @@ export class ScanService {
         signal: AbortSignal.timeout(6000)
       }).then((res) => res.text()),
       this.connectivity.traceRedirects(domain),
+    ]);
+
+    // Handle IP resolution result
+    const ipAddress = await ipResolvePromise;
+
+    // Phase 2: IP-dependent scans
+    const [
+      ipLocationResult,
+      ipBlacklistedResult,
+    ] = await Promise.allSettled([
       ipAddress ? this.ip.analyze(ipAddress, undefined, force) : Promise.resolve(null),
       ipAddress ? this.dns.checkReputation(ipAddress) : Promise.resolve(null),
     ]);
@@ -137,7 +146,7 @@ export class ScanService {
 
     const secRes = securityResult.status === "fulfilled" ? securityResult.value : null;
 
-    return {
+    const result: ScanResult = {
       url,
       domain,
       scannedAt: new Date().toISOString(),
@@ -164,6 +173,15 @@ export class ScanService {
       },
       privacyAudit: privacy.status === "fulfilled" ? privacy.value : undefined,
     };
+
+    // 4. Persist to Global Application Cache (10-minute TTL)
+    ctx?.waitUntil(
+      this.env.CACHE.put(cacheKey, JSON.stringify(result), {
+        expirationTtl: 600, // 10 minutes
+      })
+    );
+
+    return result;
   }
 
   /** 
@@ -177,8 +195,14 @@ export class ScanService {
     const scanId = generateId();
     const r2Key = `scans/${brandId}/${scanId}.json`;
 
-    // 1. Insert completed scan record
-    await this.env.DB.prepare(
+    const extraDataJson = JSON.stringify(this.extractExtraData(result));
+
+    const r2PutPromise = this.env.R2.put(r2Key, JSON.stringify(result), {
+      httpMetadata: { contentType: "application/json" },
+      customMetadata: { brandId, scanId },
+    });
+
+    const dbInsertPromise = this.env.DB.prepare(
       `INSERT INTO scans (
         id, brand_id, status, started_at, completed_at,
         tech_stack_json, dns_json, ssl_json, extra_data_json, raw_response_r2_key
@@ -192,25 +216,29 @@ export class ScanService {
         JSON.stringify(result.techStack),
         JSON.stringify(result.dns),
         JSON.stringify(result.ssl),
-        JSON.stringify({
-          security: result.security,
-          cookieAudit: result.cookieAudit,
-          vulnerabilityExposure: result.vulnerabilityExposure,
-          trustAudit: result.trustAudit,
-          connectivity: result.connectivity,
-          emailSecurity: result.emailSecurity,
-          privacyAudit: result.privacyAudit,
-          techStackHealth: result.techStackHealth,
-        }),
+        extraDataJson,
         r2Key
       )
       .run();
 
-    // 2. Store in R2
-    await this.env.R2.put(r2Key, JSON.stringify(result), {
-      httpMetadata: { contentType: "application/json" },
-      customMetadata: { brandId, scanId },
-    });
+    // 1 & 2. Execute R2 and DB in parallel
+    await Promise.all([r2PutPromise, dbInsertPromise]);
+
+    // 3. Update brand pointer
+    await this.env.DB.prepare(
+      `UPDATE brands
+       SET last_scan_id = ?,
+           last_scanned_at = ?,
+           updated_at = datetime('now')
+       WHERE id = ?`,
+    )
+      .bind(scanId, result.scannedAt, brandId)
+      .run();
+
+    // 4. Register SSL persistence so background updates work
+    if (result.ssl && result.ssl.deepScanStatus === "scanning") {
+      this.ssl.registerPersistence(result.domain, r2Key, scanId, this.env.R2, this.env.DB);
+    }
 
     // 3. Update brand pointer
     await this.env.DB.prepare(
@@ -247,15 +275,16 @@ export class ScanService {
       const url = `https://${domain}`;
       const result = await this.quickScan(url, onProgress, true, ctx);
 
-      // Store raw response in R2
       const r2Key = `scans/${brandId}/${scanId}.json`;
-      await this.env.R2.put(r2Key, JSON.stringify(result), {
+      const extraDataJson = JSON.stringify(this.extractExtraData(result));
+
+      // Parallelize R2 upload and DB update
+      const r2PutPromise = this.env.R2.put(r2Key, JSON.stringify(result), {
         httpMetadata: { contentType: "application/json" },
         customMetadata: { brandId, scanId },
       });
 
-      // Update scan record with results
-      await this.env.DB.prepare(
+      const dbUpdatePromise = this.env.DB.prepare(
         `UPDATE scans
          SET status = 'completed',
              tech_stack_json = ?,
@@ -270,20 +299,13 @@ export class ScanService {
           JSON.stringify(result.techStack),
           JSON.stringify(result.dns),
           JSON.stringify(result.ssl),
-          JSON.stringify({
-            security: result.security,
-            cookieAudit: result.cookieAudit,
-            vulnerabilityExposure: result.vulnerabilityExposure,
-            trustAudit: result.trustAudit,
-            connectivity: result.connectivity,
-            emailSecurity: result.emailSecurity,
-            privacyAudit: result.privacyAudit,
-            techStackHealth: result.techStackHealth,
-          }),
+          extraDataJson,
           r2Key,
           scanId,
         )
         .run();
+
+      await Promise.all([r2PutPromise, dbUpdatePromise]);
 
       // Update brand's last scan reference
       await this.env.DB.prepare(
@@ -314,5 +336,18 @@ export class ScanService {
 
       throw error;
     }
+  }
+
+  private extractExtraData(result: ScanResult) {
+    return {
+      security: result.security,
+      cookieAudit: result.cookieAudit,
+      vulnerabilityExposure: result.vulnerabilityExposure,
+      trustAudit: result.trustAudit,
+      connectivity: result.connectivity,
+      emailSecurity: result.emailSecurity,
+      privacyAudit: result.privacyAudit,
+      techStackHealth: result.techStackHealth,
+    };
   }
 }

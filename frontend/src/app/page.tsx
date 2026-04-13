@@ -12,6 +12,7 @@ export default function HomePage() {
   const router = useRouter();
   const [hasScanResults, setHasScanResults] = useState(false);
   const [triggerUrl, setTriggerUrl] = useState<string | null>(null);
+  const [resetKey, setResetKey] = useState(0);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -39,6 +40,7 @@ export default function HomePage() {
           
            <div className="card p-8 md:p-12 shadow-2xl border-t-8 border-t-brand-600 bg-white/50 backdrop-blur-md w-full mt-12">
              <QuickScanForm 
+               key={resetKey}
                onScanStateChange={setHasScanResults} 
                triggerUrl={triggerUrl}
              />
@@ -50,6 +52,7 @@ export default function HomePage() {
                   onClick={() => {
                     setHasScanResults(false);
                     setTriggerUrl(null);
+                    setResetKey(prev => prev + 1);
                   }}
                   className="btn-secondary gap-2 px-8 py-3 rounded-full shadow-lg hover:shadow-xl transition-all uppercase tracking-[0.2em] text-[11px] font-black"
                 >

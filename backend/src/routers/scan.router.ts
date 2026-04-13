@@ -17,8 +17,8 @@ export const scanRouter = router({
     .input(quickScanInputSchema)
     .mutation(async ({ ctx, input }): Promise<ScanResult> => {
       const scanService = new ScanService(ctx.env);
-      // Always force a fresh scan for the quick tool
-      return scanService.quickScan(input.url, undefined, true, ctx);
+      // Use cache by default (force=false) unless specified
+      return scanService.quickScan(input.url, undefined, input.force ?? false, ctx);
     }),
 
   /** Lightweight SSL deep scan status poll — just reads KV, no computation. */
