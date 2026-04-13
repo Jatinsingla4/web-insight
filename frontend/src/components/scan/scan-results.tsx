@@ -141,6 +141,12 @@ export function ScanResults({
           <h2 className={cn("text-lg font-semibold", isHistorical ? "text-surface-500" : "text-surface-900")}>
             Results for {data.domain}
           </h2>
+          {data.isCached && !isHistorical && (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 bg-brand-50 text-brand-600 text-[10px] font-black uppercase tracking-widest rounded-md border border-brand-100">
+              <Zap className="h-3 w-3 fill-current" />
+              Cached Audit
+            </div>
+          )}
           <span className="text-xs text-surface-400" suppressHydrationWarning>
             {isHistorical ? "Captured " : "Scanned "} {new Date(data.scannedAt).toLocaleString()}
           </span>

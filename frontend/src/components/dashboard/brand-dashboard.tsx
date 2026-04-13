@@ -60,8 +60,10 @@ export function BrandDashboard({ brandId, brandName, brandDomain }: BrandDashboa
   const activeScan = viewScanId ? historicalScan : latestScan;
 
   const rescanMutation = trpc.scan.rescan.useMutation({
-    onSuccess: () => {
+    onMutate: () => {
       setIsScanning(true);
+    },
+    onSuccess: () => {
       // Invalidate both brand list and latest scan
       utils.brand.list.invalidate();
       refetch();
@@ -72,13 +74,13 @@ export function BrandDashboard({ brandId, brandName, brandDomain }: BrandDashboa
   useEffect(() => {
     if (latestScan && isScanning) {
       const scanTime = new Date(latestScan.scannedAt).getTime();
-      const now = new Date().getTime();
-      // If scan was within last 30 seconds, it's likely the one we just triggered
-      if (now - scanTime < 30000) {
+      const now = Date.now();
+      // If scan was within last 60 seconds, it's the one we just triggered
+      if (now - scanTime < 60000) {
         setIsScanning(false);
       }
     }
-  }, [latestScan, isScanning]);
+  }, [latestScan?.scannedAt, isScanning]);
 
   const handleRescan = () => {
     rescanMutation.mutate({ brandId });
@@ -113,10 +115,15 @@ export function BrandDashboard({ brandId, brandName, brandDomain }: BrandDashboa
           <Globe className="h-12 w-12 text-brand-600 mx-auto animate-pulse" />
           <div className="absolute inset-0 h-12 w-12 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto" />
         </div>
-        <h3 className="text-lg font-bold text-surface-900 uppercase tracking-widest">Initial Audit in Progress</h3>
+        <h3 className="text-lg font-bold text-surface-900 uppercase tracking-widest">
+          {isScanning ? "Refresh Audit in Progress" : "Initial Audit in Progress"}
+        </h3>
         <p className="text-sm text-surface-500 mb-8 leading-relaxed max-w-md mx-auto">
-          We're currently performing a deep-scan of <span className="font-bold text-surface-900">{brandDomain}</span> to analyze your infrastructure and security posture. 
-          Results will appear automatically in a moment.
+          {isScanning 
+            ? "We're currently refreshing your infrastructure audit for"
+            : "We're currently performing a deep-scan of"
+          } <span className="font-bold text-surface-900">{brandDomain}</span> to analyze your security posture. 
+          New results will appear in a moment.
         </p>
         <div className="flex flex-col items-center gap-4">
           <div className="flex items-center gap-2 text-brand-600 font-mono text-[10px] font-black uppercase tracking-widest">
@@ -328,13 +335,26 @@ export function BrandDashboard({ brandId, brandName, brandDomain }: BrandDashboa
           expiryDate={activeScan?.ssl?.validTo || new Date().toISOString()} 
         />
       ) : (
-        <ScanResults 
-          data={activeScan!} 
-          isRefreshing={isScanning} 
-          onRefresh={handleRescan}
-          showSaveBrandButton={false} 
-          hideRefreshButton={true}
-        />
+        <div className="relative">
+          {isScanning && (
+            <div className="absolute inset-x-0 -top-8 -bottom-8 z-50 bg-white/40 backdrop-blur-[2px] flex items-center justify-center rounded-3xl animate-fade-in border-4 border-white">
+              <div className="bg-white p-6 rounded-2xl shadow-2xl border border-brand-100 flex flex-col items-center gap-4 animate-in zoom-in-95 duration-200">
+                <Spinner size="lg" className="text-brand-600" />
+                <div className="text-center">
+                  <p className="text-[11px] font-black uppercase tracking-widest text-brand-600 mb-1">Audit Engine Active</p>
+                  <p className="text-[9px] font-bold text-surface-400 uppercase tracking-tighter">Refreshing Infrastructure Intelligence...</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <ScanResults 
+            data={activeScan!} 
+            isRefreshing={isScanning} 
+            onRefresh={handleRescan}
+            showSaveBrandButton={false} 
+            hideRefreshButton={true}
+          />
+        </div>
       )}
     </div>
   );

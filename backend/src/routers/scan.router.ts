@@ -52,7 +52,8 @@ export const scanRouter = router({
         input.brandId,
         brand.domain as string,
         undefined,
-        ctx
+        ctx,
+        true // FORCE Fresh Scan
       );
 
       // Notify the DO that scan completed
@@ -101,7 +102,7 @@ export const scanRouter = router({
 
       if (!brand) notFound("Brand");
 
-      let query = `SELECT * FROM scans WHERE brand_id = ?`;
+      let query = `SELECT * FROM scans WHERE brand_id = ? AND status = 'completed'`;
       const params: unknown[] = [input.brandId];
 
       if (input.cursor) {
@@ -182,11 +183,11 @@ export const scanRouter = router({
           id: fullScan.id,
           url: `https://${fullScan.domain}`,
           domain: fullScan.domain,
-          scannedAt: fullScan.created_at,
+          scannedAt: formatted.createdAt, // USE STANDARDIZED ISO STRING
           techStack: formatted.techStack ?? [],
           dns: formatted.dns ?? { records: [], nameservers: [] },
           ssl: formatted.ssl ?? null,
-        } as any; // Cast as any for now to satisfy complex union, or refine ScanResult type
+        } as any;
       }
 
       const object = await ctx.env.R2.get(scan.raw_response_r2_key);
@@ -272,12 +273,16 @@ export const scanRouter = router({
 
 function formatScan(scan: Scan) {
   const extraData = scan.extra_data_json ? JSON.parse(scan.extra_data_json) : {};
+  
+  // Ensure dates are parsed as UTC (SQLite datetime('now') returns string without Z)
+  const toISO = (d: string | null) => d ? new Date(d.includes(' ') ? d + ' UTC' : d).toISOString() : null;
+
   return {
     ...scan,
     ...extraData,
-    createdAt: scan.created_at,
-    startedAt: scan.started_at,
-    completedAt: scan.completed_at,
+    createdAt: toISO(scan.created_at),
+    startedAt: toISO(scan.started_at),
+    completedAt: toISO(scan.completed_at),
     techStack: scan.tech_stack_json ? JSON.parse(scan.tech_stack_json) : null,
     dns: scan.dns_json ? JSON.parse(scan.dns_json) : null,
     ssl: scan.ssl_json ? JSON.parse(scan.ssl_json) : null,

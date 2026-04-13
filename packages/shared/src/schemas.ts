@@ -208,6 +208,7 @@ export const scanResultSchema = z.object({
       lastCheckedAt: z.string().optional(),
     }).optional(),
   }).optional(),
+  isCached: z.boolean().optional(),
 });
 
 // ── Brand Management ────────────────────────────────────────────────────────

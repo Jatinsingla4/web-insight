@@ -61,14 +61,7 @@ export class ScanService {
     // 1. Check Global Application Cache
     if (!force) {
       const cached = await this.env.CACHE.get<ScanResult>(cacheKey, "json");
-      if (cached) {
-        onProgress?.({ scanId, step: "completed", progress: 100 });
-        return {
-          ...cached,
-          scannedAt: cached.scannedAt, // Keep original scan time or update? User wants "Instant", so showing original is more honest
-          isCached: true, // Optional: flag for UI
-        } as ScanResult;
-      }
+      if (cached) return { ...cached, isCached: true };
     }
 
     // Phase 1: Parallel DNS resolution + Baseline Scans that do NOT depend on IP
@@ -174,10 +167,10 @@ export class ScanService {
       privacyAudit: privacy.status === "fulfilled" ? privacy.value : undefined,
     };
 
-    // 4. Persist to Global Application Cache (10-minute TTL)
+    // 4. Persist to Global Application Cache (24-hour TTL)
     ctx?.waitUntil(
       this.env.CACHE.put(cacheKey, JSON.stringify(result), {
-        expirationTtl: 600, // 10 minutes
+        expirationTtl: 86400, // 24 hours
       })
     );
 
@@ -229,27 +222,16 @@ export class ScanService {
       `UPDATE brands
        SET last_scan_id = ?,
            last_scanned_at = ?,
-           updated_at = datetime('now')
+           updated_at = ?
        WHERE id = ?`,
     )
-      .bind(scanId, result.scannedAt, brandId)
+      .bind(scanId, result.scannedAt, new Date().toISOString(), brandId)
       .run();
 
     // 4. Register SSL persistence so background updates work
     if (result.ssl && result.ssl.deepScanStatus === "scanning") {
       this.ssl.registerPersistence(result.domain, r2Key, scanId, this.env.R2, this.env.DB);
     }
-
-    // 3. Update brand pointer
-    await this.env.DB.prepare(
-      `UPDATE brands
-       SET last_scan_id = ?,
-           last_scanned_at = ?,
-           updated_at = datetime('now')
-       WHERE id = ?`,
-    )
-      .bind(scanId, result.scannedAt, brandId)
-      .run();
 
     return scanId;
   }
@@ -260,20 +242,22 @@ export class ScanService {
     domain: string,
     onProgress?: (p: ScanProgress) => void,
     ctx?: { waitUntil: (p: Promise<any>) => void },
+    force = false,
   ): Promise<string> {
     const scanId = generateId();
 
     // Insert pending scan record
     await this.env.DB.prepare(
-      `INSERT INTO scans (id, brand_id, status, started_at)
-       VALUES (?, ?, 'running', datetime('now'))`,
+      `INSERT INTO scans (id, brand_id, status, started_at, created_at)
+       VALUES (?, ?, 'running', ?, ?)`,
     )
-      .bind(scanId, brandId)
+      .bind(scanId, brandId, new Date().toISOString(), new Date().toISOString())
       .run();
 
     try {
       const url = `https://${domain}`;
-      const result = await this.quickScan(url, onProgress, true, ctx);
+      // Allow cache usage for brands if available (improves "Instant" feel)
+      const result = await this.quickScan(url, onProgress, false, ctx);
 
       const r2Key = `scans/${brandId}/${scanId}.json`;
       const extraDataJson = JSON.stringify(this.extractExtraData(result));
@@ -292,7 +276,7 @@ export class ScanService {
              ssl_json = ?,
              extra_data_json = ?,
              raw_response_r2_key = ?,
-             completed_at = datetime('now')
+             completed_at = ?
          WHERE id = ?`,
       )
         .bind(
@@ -301,6 +285,7 @@ export class ScanService {
           JSON.stringify(result.ssl),
           extraDataJson,
           r2Key,
+          new Date().toISOString(),
           scanId,
         )
         .run();
@@ -311,11 +296,11 @@ export class ScanService {
       await this.env.DB.prepare(
         `UPDATE brands
          SET last_scan_id = ?,
-             last_scanned_at = datetime('now'),
-             updated_at = datetime('now')
+             last_scanned_at = ?,
+             updated_at = ?
          WHERE id = ?`,
       )
-        .bind(scanId, brandId)
+        .bind(scanId, new Date().toISOString(), new Date().toISOString(), brandId)
         .run();
 
       // Register persistence so SSL deep scan can update R2/D1 when it completes
@@ -328,10 +313,10 @@ export class ScanService {
         `UPDATE scans
          SET status = 'failed',
              error_message = ?,
-             completed_at = datetime('now')
+             completed_at = ?
          WHERE id = ?`,
       )
-        .bind(message, scanId)
+        .bind(message, new Date().toISOString(), scanId)
         .run();
 
       throw error;

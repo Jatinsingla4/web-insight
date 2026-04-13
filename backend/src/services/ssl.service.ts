@@ -171,7 +171,7 @@ export class SslService {
    */
   private async pollSslLabs(domain: string, startNew: boolean): Promise<void> {
     const cacheKey = `${SSL_CACHE_PREFIX}:${domain}`;
-    const maxRetries = 15; // up to ~5 mins total (10s + 14×20s = 290s)
+    const maxRetries = 30; // up to ~5 mins total (10s + 29×10s = 300s)
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
@@ -214,15 +214,14 @@ export class SslService {
           return;
         }
 
-        // DNS or IN_PROGRESS — keep polling
-        // 10s wait on first attempt, 20s thereafter
-        await this.sleep(isFirstAttempt ? 10000 : 20000);
+        // Check every 10s to catch "READY" as soon as possible
+        await this.sleep(10000);
       } catch {
         // Network error or timeout — keep trying unless last attempt
         if (attempt === maxRetries - 1) {
           await this.markDeepScanFailed(cacheKey);
         }
-        await this.sleep(20000);
+        await this.sleep(10000);
       }
     }
 
