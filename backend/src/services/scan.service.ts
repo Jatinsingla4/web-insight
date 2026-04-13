@@ -10,6 +10,7 @@ import { ConnectivityService } from "./connectivity.service";
 import { EmailService } from "./email.service";
 import { PrivacyService } from "./privacy.service";
 import { generateId } from "../lib/crypto";
+import { assertPublicUrl } from "../lib/ssrf";
 import type { Env } from "../lib/env";
 
 export interface ScanProgress {
@@ -51,7 +52,7 @@ export class ScanService {
     ctx?: { waitUntil: (p: Promise<any>) => void },
   ): Promise<ScanResult> {
     const scanId = generateId();
-    const parsedUrl = new URL(url);
+    const parsedUrl = assertPublicUrl(url); // SSRF guard
     const domain = parsedUrl.hostname;
 
     onProgress?.({ scanId, step: "scanning", progress: 0 });
@@ -190,32 +191,36 @@ export class ScanService {
 
     const extraDataJson = JSON.stringify(this.extractExtraData(result));
 
-    const r2PutPromise = this.env.R2.put(r2Key, JSON.stringify(result), {
+    // 1. Write to R2 first, then DB — if DB fails we delete the orphaned R2 object
+    await this.env.R2.put(r2Key, JSON.stringify(result), {
       httpMetadata: { contentType: "application/json" },
       customMetadata: { brandId, scanId },
     });
 
-    const dbInsertPromise = this.env.DB.prepare(
-      `INSERT INTO scans (
-        id, brand_id, status, started_at, completed_at,
-        tech_stack_json, dns_json, ssl_json, extra_data_json, raw_response_r2_key
-      ) VALUES (?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        scanId,
-        brandId,
-        result.scannedAt,
-        result.scannedAt,
-        JSON.stringify(result.techStack),
-        JSON.stringify(result.dns),
-        JSON.stringify(result.ssl),
-        extraDataJson,
-        r2Key
+    try {
+      await this.env.DB.prepare(
+        `INSERT INTO scans (
+          id, brand_id, status, started_at, completed_at,
+          tech_stack_json, dns_json, ssl_json, extra_data_json, raw_response_r2_key
+        ) VALUES (?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run();
-
-    // 1 & 2. Execute R2 and DB in parallel
-    await Promise.all([r2PutPromise, dbInsertPromise]);
+        .bind(
+          scanId,
+          brandId,
+          result.scannedAt,
+          result.scannedAt,
+          JSON.stringify(result.techStack),
+          JSON.stringify(result.dns),
+          JSON.stringify(result.ssl),
+          extraDataJson,
+          r2Key
+        )
+        .run();
+    } catch (dbErr) {
+      // Roll back R2 object to avoid orphan
+      this.env.R2.delete(r2Key).catch(() => {});
+      throw dbErr;
+    }
 
     // 3. Update brand pointer
     await this.env.DB.prepare(
@@ -262,35 +267,39 @@ export class ScanService {
       const r2Key = `scans/${brandId}/${scanId}.json`;
       const extraDataJson = JSON.stringify(this.extractExtraData(result));
 
-      // Parallelize R2 upload and DB update
-      const r2PutPromise = this.env.R2.put(r2Key, JSON.stringify(result), {
+      // Write R2 first, then DB — on DB failure delete the orphaned R2 object
+      await this.env.R2.put(r2Key, JSON.stringify(result), {
         httpMetadata: { contentType: "application/json" },
         customMetadata: { brandId, scanId },
       });
 
-      const dbUpdatePromise = this.env.DB.prepare(
-        `UPDATE scans
-         SET status = 'completed',
-             tech_stack_json = ?,
-             dns_json = ?,
-             ssl_json = ?,
-             extra_data_json = ?,
-             raw_response_r2_key = ?,
-             completed_at = ?
-         WHERE id = ?`,
-      )
-        .bind(
-          JSON.stringify(result.techStack),
-          JSON.stringify(result.dns),
-          JSON.stringify(result.ssl),
-          extraDataJson,
-          r2Key,
-          new Date().toISOString(),
-          scanId,
+      try {
+        await this.env.DB.prepare(
+          `UPDATE scans
+           SET status = 'completed',
+               tech_stack_json = ?,
+               dns_json = ?,
+               ssl_json = ?,
+               extra_data_json = ?,
+               raw_response_r2_key = ?,
+               completed_at = ?
+           WHERE id = ?`,
         )
-        .run();
-
-      await Promise.all([r2PutPromise, dbUpdatePromise]);
+          .bind(
+            JSON.stringify(result.techStack),
+            JSON.stringify(result.dns),
+            JSON.stringify(result.ssl),
+            extraDataJson,
+            r2Key,
+            new Date().toISOString(),
+            scanId,
+          )
+          .run();
+      } catch (dbErr) {
+        // Roll back R2 object to avoid orphan
+        this.env.R2.delete(r2Key).catch(() => {});
+        throw dbErr;
+      }
 
       // Update brand's last scan reference
       await this.env.DB.prepare(

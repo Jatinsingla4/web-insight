@@ -1,7 +1,7 @@
 import * as jose from "jose";
 import type { Session, User } from "@dns-checker/shared";
 import { SESSION_DURATION_MS } from "@dns-checker/shared";
-import { generateId, generateSessionToken } from "../lib/crypto";
+import { generateId, generateSessionToken, sha256 } from "../lib/crypto";
 import type { Env } from "../lib/env";
 
 interface GoogleTokenResponse {
@@ -53,6 +53,7 @@ export class AuthService {
           redirect_uri: redirectUri,
           grant_type: "authorization_code",
         }),
+        signal: AbortSignal.timeout(8000),
       },
     );
 
@@ -63,8 +64,13 @@ export class AuthService {
 
     const tokens = (await tokenResponse.json()) as GoogleTokenResponse;
 
-    // Decode the ID token to get user info
-    const claims = jose.decodeJwt(tokens.id_token) as unknown as GoogleUserInfo;
+    // Verify the ID token signature against Google's JWKS (do NOT just decode)
+    const JWKS = jose.createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
+    const { payload } = await jose.jwtVerify(tokens.id_token, JWKS, {
+      issuer: ["https://accounts.google.com", "accounts.google.com"],
+      audience: this.env.GOOGLE_CLIENT_ID,
+    });
+    const claims = payload as unknown as GoogleUserInfo;
 
     // Upsert user in D1
     const user = await this.upsertUser({
@@ -74,8 +80,9 @@ export class AuthService {
       avatarUrl: claims.picture,
     });
 
-    // Create session
+    // Create session — store hash of token as KV key so raw tokens are never at rest
     const sessionToken = generateSessionToken();
+    const tokenHash = await sha256(sessionToken);
     const session: Session = {
       userId: user.id,
       email: user.email,
@@ -85,7 +92,7 @@ export class AuthService {
     };
 
     await this.env.SESSIONS.put(
-      `session:${sessionToken}`,
+      `session:${tokenHash}`,
       JSON.stringify(session),
       { expirationTtl: SESSION_DURATION_MS / 1000 },
     );
@@ -95,13 +102,14 @@ export class AuthService {
 
   /** Validate a session token and return the session. */
   async validateSession(token: string): Promise<Session | null> {
+    const tokenHash = await sha256(token);
     const data = await this.env.SESSIONS.get<Session>(
-      `session:${token}`,
+      `session:${tokenHash}`,
       "json",
     );
     if (!data) return null;
     if (data.expiresAt < Date.now()) {
-      await this.env.SESSIONS.delete(`session:${token}`);
+      await this.env.SESSIONS.delete(`session:${tokenHash}`);
       return null;
     }
     return data;
@@ -109,7 +117,8 @@ export class AuthService {
 
   /** Destroy a session. */
   async destroySession(token: string): Promise<void> {
-    await this.env.SESSIONS.delete(`session:${token}`);
+    const tokenHash = await sha256(token);
+    await this.env.SESSIONS.delete(`session:${tokenHash}`);
   }
 
   private async upsertUser(info: {

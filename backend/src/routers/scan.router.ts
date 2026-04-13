@@ -9,13 +9,27 @@ import {
 import type { ScanResult, SslCertificate, Scan } from "@dns-checker/shared";
 import { router, rateLimitedProcedure, protectedProcedure } from "./context";
 import { ScanService } from "../services/scan.service";
-import { notFound } from "../lib/errors";
+import { checkRateLimit } from "../middleware/rate-limit";
+import { notFound, rateLimited } from "../lib/errors";
 
 export const scanRouter = router({
   /** Stateless quick scan — no auth required. */
   quick: rateLimitedProcedure
     .input(quickScanInputSchema)
     .mutation(async ({ ctx, input }): Promise<ScanResult> => {
+      // Per-domain rate limit: max 10 scans/domain/hour to prevent storming
+      let domain = "";
+      try { domain = new URL(input.url).hostname; } catch { /* ssrf guard handles invalid urls */ }
+      if (domain) {
+        const domainLimit = await checkRateLimit(
+          ctx.env,
+          `domain:${domain}`,
+          10,    // max 10 scans
+          3600_000, // per hour
+        );
+        if (!domainLimit.allowed) rateLimited();
+      }
+
       const scanService = new ScanService(ctx.env);
       // Use cache by default (force=false) unless specified
       return scanService.quickScan(input.url, undefined, input.force ?? false, ctx);

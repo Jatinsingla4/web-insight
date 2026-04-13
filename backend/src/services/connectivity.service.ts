@@ -1,3 +1,5 @@
+import { assertPublicUrl } from "../lib/ssrf";
+
 export interface ConnectivityAudit {
   redirectChain: string[];
   isHstsPreloadReady: boolean;
@@ -14,6 +16,7 @@ export class ConnectivityService {
     try {
       // Trace up to 5 hops to avoid infinite loops
       for (let i = 0; i < 5; i++) {
+        assertPublicUrl(currentUrl); // SSRF guard on every hop
         chain.push(currentUrl);
         const response = await fetch(currentUrl, {
           method: "HEAD",

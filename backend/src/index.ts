@@ -4,6 +4,7 @@ import { createContextFactory } from "./routers/context";
 import { AuthService } from "./services/auth.service";
 import { ReminderService } from "./services/reminder.service";
 import { NotificationService } from "./services/notification.service";
+import { extractSessionToken } from "./middleware/auth";
 import type { Env } from "./lib/env";
 
 // Re-export Durable Objects for wrangler
@@ -43,6 +44,22 @@ export default {
       // ── OAuth redirect endpoint ─────────────────────────────────────────
       if (url.pathname === "/auth/google/callback") {
         return handleOAuthRedirect(request, env, corsHeaders);
+      }
+
+      // ── Logout endpoint (clears HttpOnly session cookie) ───────────────
+      if (url.pathname === "/auth/logout" && request.method === "POST") {
+        const token = extractSessionToken(request);
+        if (token) {
+          const authService = new AuthService(env);
+          await authService.destroySession(token);
+        }
+        return new Response(null, {
+          status: 204,
+          headers: {
+            ...corsHeaders,
+            "Set-Cookie": "session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0",
+          },
+        });
       }
 
       // ── tRPC handler ───────────────────────────────────────────────────
@@ -137,6 +154,15 @@ async function handleOAuthRedirect(
     return json({ error: "Missing code or state" }, corsHeaders, 400);
   }
 
+  // Validate OAuth state (CSRF protection)
+  const storedState = await env.SESSIONS.get(`oauth_state:${state}`);
+  if (!storedState) {
+    return Response.redirect(
+      `${env.FRONTEND_URL}/auth/callback?error=invalid_state`,
+    );
+  }
+  await env.SESSIONS.delete(`oauth_state:${state}`);
+
   try {
     const authService = new AuthService(env);
     const redirectUri = `${url.origin}/auth/google/callback`;
@@ -145,16 +171,24 @@ async function handleOAuthRedirect(
       redirectUri,
     );
 
-    // Redirect to frontend with session token
+    // Set session as HttpOnly cookie — do NOT expose token in URL
+    const isSecure = env.ENVIRONMENT !== "development";
+    const cookieFlags = isSecure ? "Secure; " : "";
+    const sessionCookie = `session=${sessionToken}; HttpOnly; ${cookieFlags}SameSite=Lax; Path=/; Max-Age=604800`;
+
     const params = new URLSearchParams({
-      token: sessionToken,
       userId: user.id,
       name: user.name,
+      email: user.email,
     });
 
-    return Response.redirect(
-      `${env.FRONTEND_URL}/auth/callback?${params}`,
-    );
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: `${env.FRONTEND_URL}/auth/callback?${params}`,
+        "Set-Cookie": sessionCookie,
+      },
+    });
   } catch (err) {
     console.error("OAuth callback error:", err);
     return Response.redirect(

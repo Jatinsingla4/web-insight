@@ -3,11 +3,8 @@
 import { useState, useMemo, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { trpc, createTrpcClient } from "@/lib/trpc";
-import { useAuthStore } from "@/lib/auth-store";
 
 export function Providers({ children }: { children: ReactNode }) {
-  const { sessionToken } = useAuthStore();
-
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -32,7 +29,8 @@ export function Providers({ children }: { children: ReactNode }) {
       }),
   );
 
-  const trpcClient = useMemo(() => createTrpcClient(sessionToken), [sessionToken]);
+  // trpcClient doesn't depend on sessionToken — auth is via HttpOnly cookie
+  const trpcClient = useMemo(() => createTrpcClient(), []);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>

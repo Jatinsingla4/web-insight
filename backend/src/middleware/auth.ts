@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import type { Session } from "@dns-checker/shared";
+import { sha256 } from "../lib/crypto";
 import type { Env } from "../lib/env";
 
 /** Extract session token from Authorization header or cookie. */
@@ -26,15 +27,16 @@ export async function validateRequest(
   const token = extractSessionToken(request);
   if (!token) return null;
 
+  const tokenHash = await sha256(token);
   const session = await env.SESSIONS.get<Session>(
-    `session:${token}`,
+    `session:${tokenHash}`,
     "json",
   );
 
   if (!session || session.expiresAt < Date.now()) {
     if (session) {
       // Clean up expired session
-      await env.SESSIONS.delete(`session:${token}`);
+      await env.SESSIONS.delete(`session:${tokenHash}`);
     }
     return null;
   }

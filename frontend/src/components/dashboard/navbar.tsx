@@ -2,24 +2,20 @@
 
 import { Shield, LogIn, LogOut, User } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
-import { trpc, getAppUrl } from "@/lib/trpc";
+import { trpc, getBaseUrl } from "@/lib/trpc";
 import Image from "next/image";
 import Link from "next/link";
 import { BrandSelector } from "./brand-selector";
 
 export function Navbar() {
   const { user, isAuthenticated, clearSession } = useAuthStore();
-  const logoutMutation = trpc.auth.logout.useMutation({
-    onSettled: () => {
-      clearSession();
-    },
-  });
 
   const { refetch: fetchAuthUrl } = trpc.auth.getAuthUrl.useQuery(
-    { redirectUri: `${getAppUrl()}/auth/callback` },
+    // redirectUri points to the backend — cookie is set server-side on redirect
+    { redirectUri: `${getBaseUrl()}/auth/google/callback` },
     { enabled: false },
   );
- 
+
   async function handleLogin() {
     try {
       const { data } = await fetchAuthUrl();
@@ -29,6 +25,20 @@ export function Navbar() {
     } catch (error) {
       console.error("Failed to get auth URL:", error);
       alert("Registration/Login is currently unavailable. Please try again later.");
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      // POST to /auth/logout — backend destroys KV session and clears HttpOnly cookie
+      await fetch(`${getBaseUrl()}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Ignore network errors — still clear local state
+    } finally {
+      clearSession();
     }
   }
 
@@ -100,9 +110,8 @@ export function Navbar() {
                   </span>
                 </div>
                 <button
-                  onClick={() => logoutMutation.mutate()}
+                  onClick={handleLogout}
                   className="btn-ghost gap-1.5 text-xs"
-                  disabled={logoutMutation.isPending}
                 >
                   <LogOut className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Sign Out</span>

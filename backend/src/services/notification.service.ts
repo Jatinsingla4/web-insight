@@ -32,6 +32,7 @@ export class NotificationService {
           subject: payload.subject,
           html: payload.html,
         }),
+        signal: AbortSignal.timeout(8000),
       });
 
       if (!response.ok) {

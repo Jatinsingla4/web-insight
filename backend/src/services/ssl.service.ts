@@ -458,6 +458,11 @@ export class SslService {
    * This is the most reliable source because it hits the live server directly.
    */
   private async fetchCertViaTcpSocket(domain: string): Promise<CertSpotterEntry | null> {
+    // Circuit breaker: skip if this domain failed TCP within the last 5 minutes
+    const cbKey = `tcp_fail:${domain}`;
+    const recentFailure = await this.cache.get(cbKey);
+    if (recentFailure) return null;
+
     try {
       return await Promise.race([
         this._doTcpCertFetch(domain),
@@ -466,6 +471,8 @@ export class SslService {
         ),
       ]);
     } catch {
+      // Record failure — skip TCP for this domain for 5 minutes
+      this.cache.put(cbKey, "1", { expirationTtl: 300 }).catch(() => {});
       return null;
     }
   }

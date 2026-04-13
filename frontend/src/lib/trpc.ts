@@ -18,24 +18,19 @@ export function getAppUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 }
 
-export function createTrpcClient(sessionToken: string | null) {
+// Session token is now in an HttpOnly cookie — no token param needed
+export function createTrpcClient() {
   return trpc.createClient({
     links: [
       httpBatchLink({
         url: `${getBaseUrl()}/trpc`,
         headers() {
-          const headers: Record<string, string> = {
-            "x-trpc-source": "web",
-          };
-          if (sessionToken) {
-            headers["Authorization"] = `Bearer ${sessionToken}`;
-          }
-          return headers;
+          return { "x-trpc-source": "web" };
         },
         fetch(url, options) {
           return fetch(url, {
             ...options,
-            credentials: "include",
+            credentials: "include", // sends HttpOnly session cookie automatically
           });
         },
       }),

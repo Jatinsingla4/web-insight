@@ -71,11 +71,14 @@ export const authRouter = router({
       };
     }),
 
-  /** Logout — destroy session. */
+  /** Logout — destroy session (cookie cleared by /auth/logout endpoint). */
   logout: protectedProcedure.mutation(async ({ ctx }) => {
-    const token = ctx.req.headers
-      .get("Authorization")
-      ?.replace("Bearer ", "");
+    // Read token from cookie or Authorization header (both supported)
+    const cookie = ctx.req.headers.get("Cookie");
+    const cookieMatch = cookie?.match(/(?:^|;\s*)session=([^;]+)/);
+    const token =
+      cookieMatch?.[1] ??
+      ctx.req.headers.get("Authorization")?.replace("Bearer ", "");
     if (token) {
       const authService = new AuthService(ctx.env);
       await authService.destroySession(token);

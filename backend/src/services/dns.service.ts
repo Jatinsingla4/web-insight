@@ -39,13 +39,13 @@ const DNS_TYPE_NUM: Record<string, number> = {
   CAA: 257,
 };
 
-/** DNS resolvers with automatic fallback */
+/**
+ * DNS resolvers — limited to 2 to keep subrequest budget safe.
+ * 2 resolvers × 9 record types = max 18 subrequests for DNS.
+ */
 const DNS_RESOLVERS = [
   { name: "Google", url: "https://dns.google/resolve" },
   { name: "Cloudflare", url: "https://cloudflare-dns.com/dns-query" },
-  { name: "NextDNS", url: "https://dns.nextdns.io/resolve" },
-  { name: "Alibaba DNS", url: "https://dns.alidns.com/resolve" },
-  { name: "OpenDNS", url: "https://doh.opendns.com/dns-query" },
 ] as const;
 
 const BIMI_SELECTORS = ["default", "corporate", "promo", "mail"];
