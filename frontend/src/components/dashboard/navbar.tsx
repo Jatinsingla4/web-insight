@@ -52,7 +52,7 @@ export function Navbar() {
               href={isAuthenticated ? "/dashboard" : "/"} 
               className="flex items-center gap-3 hover:opacity-80 transition-opacity"
             >
-              <div className="h-9 w-9 rounded-lg bg-brand-600 flex items-center justify-center">
+              <div className="h-9 w-9 rounded-lg bg-theme-gradient flex items-center justify-center shadow-sm">
                 <Shield className="h-5 w-5 text-white" />
               </div>
               <div className="hidden lg:block">
@@ -71,13 +71,13 @@ export function Navbar() {
                 <div className="hidden md:flex items-center gap-1">
                   <Link 
                     href="/dashboard?mode=manage" 
-                    className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-surface-500 hover:text-brand-600 transition-colors"
+                    className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-surface-500 hover:text-theme-primary transition-colors"
                   >
                     Portfolio
                   </Link>
                   <Link 
                     href="/dashboard?mode=quick" 
-                    className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-surface-500 hover:text-brand-600 transition-colors"
+                    className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-surface-500 hover:text-theme-primary transition-colors"
                   >
                     Quick Audit
                   </Link>
@@ -101,8 +101,8 @@ export function Navbar() {
                       className="rounded-full"
                     />
                   ) : (
-                    <div className="h-8 w-8 rounded-full bg-brand-100 flex items-center justify-center">
-                      <User className="h-4 w-4 text-brand-600" />
+                    <div className="h-8 w-8 rounded-full bg-theme-primary-light flex items-center justify-center">
+                      <User className="h-4 w-4 text-theme-primary" />
                     </div>
                   )}
                   <span className="text-sm font-medium text-surface-700 hidden sm:block">

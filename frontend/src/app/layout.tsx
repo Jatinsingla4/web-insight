@@ -1,8 +1,21 @@
+import { Inter, Maven_Pro } from "next/font/google";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Providers } from "./providers";
 import { ErrorBoundary } from "@/components/error-boundary";
 import "@/styles/globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+const mavenPro = Maven_Pro({
+  subsets: ["latin"],
+  variable: "--font-maven-pro",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Web Insight — Domain Intelligence Platform",
@@ -19,8 +32,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${inter.variable} ${mavenPro.variable}`}
+      suppressHydrationWarning
+    >
+      <body suppressHydrationWarning className="font-sans">
         <ErrorBoundary>
           <Providers>{children}</Providers>
         </ErrorBoundary>

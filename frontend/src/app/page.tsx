@@ -38,7 +38,7 @@ export default function HomePage() {
             </p>
           </div>
           
-           <div className="card p-8 md:p-12 shadow-2xl border-t-8 border-t-brand-600 bg-white/50 backdrop-blur-md w-full mt-12">
+           <div className="card p-8 md:p-12 shadow-2xl border-t-8 border-t-theme-primary bg-white/80 backdrop-blur-md w-full mt-12">
              <QuickScanForm 
                key={resetKey}
                onScanStateChange={setHasScanResults} 
@@ -65,7 +65,7 @@ export default function HomePage() {
 
         {/* Feature Section - Guest View */}
         {!hasScanResults && !isAuthenticated && (
-           <section className="card p-12 bg-surface-900 text-white overflow-hidden relative animate-in fade-in zoom-in duration-700">
+           <section className="card p-12 bg-[#0a0a0a] text-white overflow-hidden relative animate-in fade-in zoom-in duration-700">
              <div className="absolute top-0 right-0 p-12 opacity-5">
                <Shield className="h-64 w-64" />
              </div>
@@ -98,8 +98,8 @@ export default function HomePage() {
       <footer className="border-t border-surface-200 mt-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="flex flex-col items-center justify-center gap-6">
-            <div className="flex items-center gap-2 grayscale opacity-30">
-              <Shield className="h-6 w-6" />
+            <div className="flex items-center gap-2 grayscale opacity-40">
+              <Shield className="h-6 w-6 text-theme-primary" />
               <span className="font-black text-lg tracking-tighter uppercase">WEB INSIGHT</span>
             </div>
             <p className="text-[11px] font-black text-surface-400 uppercase tracking-[0.3em] text-center" suppressHydrationWarning>
@@ -115,8 +115,8 @@ export default function HomePage() {
 function Feature({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
     <div className="flex flex-col items-center gap-4 p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md transition-all hover:bg-white/10 hover:-translate-y-1">
-      <div className="text-brand-400">{icon}</div>
-      <span className="text-[11px] font-black uppercase tracking-widest text-brand-100">{label}</span>
+      <div className="text-theme-accent">{icon}</div>
+      <span className="text-[11px] font-black uppercase tracking-widest text-palette-light-blue opacity-70">{label}</span>
     </div>
   );
 }

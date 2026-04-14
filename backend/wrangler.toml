@@ -7,6 +7,10 @@ compatibility_flags = ["nodejs_compat"]
 ENVIRONMENT = "production"
 FRONTEND_URL = "https://web-insight.pages.dev"
 
+# Daily Security Audit Trigger
+[triggers]
+crons = ["0 0 * * *"]
+
 # D1 Database
 [[d1_databases]]
 binding = "DB"
@@ -18,11 +22,6 @@ migrations_dir = "src/db/migrations"
 [[r2_buckets]]
 binding = "R2"
 bucket_name = "dns-checker-raw-scans"
-
-# Vectorize Index (future: AI insights)
-# [[vectorize]]
-# binding = "VECTORIZE"
-# index_name = "dns-checker-embeddings"
 
 # Durable Objects
 [durable_objects]

@@ -4,35 +4,65 @@
 
 @layer base {
   :root {
+    --theme-primary: #3353FE;
+    --theme-primary-hover: #1F4CEE;
+    --theme-primary-light: rgba(51, 83, 254, 0.08);
+    --theme-accent: #32B7EE;
+    --theme-accent-hover: #41A7FE;
+    --radius: 0.5rem;
+    --border-default: 0 0% 89.8%;
+    --surface-light: 0 0% 100%;
+    --surface-dark: 0 0% 3.9%;
+
     --color-bg: 255 255 255;
     --color-fg: 15 23 42;
   }
 
   html {
     @apply antialiased;
+    font-size: 13px;
+    line-height: 1.4;
   }
 
   body {
-    @apply bg-surface-50 text-surface-900;
+    @apply bg-surface-50 text-surface-900 font-sans;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-heading font-semibold tracking-tight;
   }
 }
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center rounded-lg px-4 py-2
-           text-sm font-medium transition-all duration-150
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2
+           text-sm font-medium transition-all duration-200
            focus:outline-none focus:ring-2 focus:ring-offset-2
            disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-primary {
-    @apply btn bg-brand-600 text-white hover:bg-brand-700
-           focus:ring-brand-500 active:bg-brand-800;
+    @apply btn bg-theme-gradient-button text-white border-none
+           hover:bg-theme-gradient-button-hover;
+    box-shadow: 0 2px 8px rgba(31, 76, 238, 0.15);
+  }
+
+  .btn-primary:hover {
+    box-shadow: 0 4px 16px rgba(31, 76, 238, 0.35);
   }
 
   .btn-secondary {
-    @apply btn bg-surface-100 text-surface-700 border border-surface-300
-           hover:bg-surface-200 focus:ring-surface-400;
+    @apply btn bg-theme-primary-light text-theme-primary
+           hover:bg-theme-primary/10 transition-colors;
+  }
+
+  .btn-accent {
+    @apply btn bg-theme-accent text-white hover:bg-theme-accent-hover;
   }
 
   .btn-danger {
@@ -46,26 +76,32 @@
   }
 
   .btn-outline {
-    @apply btn bg-white text-surface-700 border border-surface-300
-           hover:bg-surface-50 hover:border-surface-400
+    @apply btn bg-white text-surface-700 border border-surface-200
+           hover:bg-surface-50 hover:border-surface-300
            focus:ring-surface-400;
   }
 
   .input {
-    @apply block w-full rounded-lg border border-surface-300 px-4 py-2.5
+    @apply block w-full rounded-sm border border-surface-200 px-4 py-2
            text-sm text-surface-900 placeholder-surface-400
            bg-white shadow-sm
-           focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20
-           focus:outline-none transition-colors;
+           focus:border-theme-primary focus:ring-2 focus:ring-theme-primary/10
+           focus:outline-none transition-all;
   }
 
   .card {
-    @apply bg-white rounded-xl border border-surface-200 shadow-sm;
+    @apply bg-white rounded-lg border border-surface-200 shadow-sm
+           transition-all duration-200;
+    border-color: hsl(var(--border-default));
+  }
+
+  .card:hover {
+    @apply shadow-md;
   }
 
   .badge {
     @apply inline-flex items-center rounded-full px-2.5 py-0.5
-           text-xs font-medium;
+           text-xs font-semibold;
   }
 
   .badge-success {
@@ -81,7 +117,7 @@
   }
 
   .badge-info {
-    @apply badge bg-blue-50 text-blue-700 ring-1 ring-blue-600/20;
+    @apply badge bg-theme-primary-light text-theme-primary ring-1 ring-theme-primary/20;
   }
 
   .badge-neutral {
